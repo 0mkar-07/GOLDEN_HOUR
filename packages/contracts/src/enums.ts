@@ -4,6 +4,28 @@ export enum UserRole {
   ADMIN = 'ADMIN',
 }
 
+export enum ReceivingStatus {
+  OPEN = 'OPEN',
+  RESTRICTED = 'RESTRICTED',
+  DIVERT_ALL = 'DIVERT_ALL',
+}
+
+export enum SpecialtyType {
+  TRAUMA_SURGEON = 'TRAUMA_SURGEON',
+  NEUROSURGEON = 'NEUROSURGEON',
+  CARDIOLOGIST = 'CARDIOLOGIST',
+  PEDIATRICIAN = 'PEDIATRICIAN',
+  INTENSIVIST = 'INTENSIVIST',
+}
+
+export enum ResourceType {
+  VENTILATOR = 'VENTILATOR',
+  TRAUMA_BAY = 'TRAUMA_BAY',
+  ICU_BED = 'ICU_BED',
+  CT_SCAN = 'CT_SCAN',
+  CATH_LAB = 'CATH_LAB',
+}
+
 export enum CaseStatus {
   DRAFT = 'DRAFT',
   ASSESSED = 'ASSESSED',
@@ -38,4 +60,9 @@ export enum AllocationState {
   RESERVED = 'RESERVED',
   IN_USE = 'IN_USE',
   RELEASED = 'RELEASED',
+}
+
+export enum DestinationActor {
+  CLINICIAN = 'CLINICIAN',
+  SYSTEM = 'SYSTEM',
 }

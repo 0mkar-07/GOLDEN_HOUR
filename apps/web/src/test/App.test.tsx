@@ -2,11 +2,33 @@ import { describe, it, expect, vi } from 'vitest';
 import { render, screen, act } from '@testing-library/react';
 import App from '../App';
 
-// Mock fetch for health badge
-global.fetch = vi.fn().mockImplementation(() =>
-  Promise.resolve({
+// Mock fetch for health badge and auth me
+global.fetch = vi.fn().mockImplementation((url: string) => {
+  if (url.includes('/api/v1/auth/me')) {
+    return Promise.resolve({
+      ok: true,
+      status: 200,
+      headers: new Headers({ 'content-type': 'application/json' }),
+      json: () =>
+        Promise.resolve({
+          user: {
+            id: 'user-amb-001',
+            email: 'paramedic@goldenhour.test',
+            name: 'Officer Alex Rivera, Paramedic Lead',
+            role: 'AMBULANCE',
+            ambulanceId: 'amb-104',
+            active: true,
+            createdAt: new Date().toISOString(),
+          },
+        }),
+    });
+  }
+
+  // Health endpoint
+  return Promise.resolve({
     ok: true,
     status: 200,
+    headers: new Headers({ 'content-type': 'application/json' }),
     json: () =>
       Promise.resolve({
         status: 'ok',
@@ -17,11 +39,11 @@ global.fetch = vi.fn().mockImplementation(() =>
           latencyMs: 5,
         },
       }),
-  })
-);
+  });
+});
 
-describe('GoldenHour Web Shell', () => {
-  it('renders branding and navigation routes', async () => {
+describe('GoldenHour Web Shell (Phase 2)', () => {
+  it('renders branding, persistent demo badge, and role switcher', async () => {
     await act(async () => {
       render(<App />);
     });
@@ -31,6 +53,7 @@ describe('GoldenHour Web Shell', () => {
     expect(screen.getByRole('link', { name: /ambulance/i })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /hospital/i })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /admin/i })).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: /active demo role/i })).toBeInTheDocument();
   });
 
   it('renders ambulance active page on initial route', async () => {

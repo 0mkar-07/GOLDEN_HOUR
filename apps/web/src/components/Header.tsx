@@ -1,9 +1,13 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
-import { Ambulance, Building2, Shield, Clock } from 'lucide-react';
+import { Ambulance, Building2, Shield, Clock, User, LogOut } from 'lucide-react';
 import { ApiHealthBadge } from './ApiHealthBadge';
+import { useAuth } from '../context/AuthContext';
+import { UserRole } from '@goldenhour/contracts';
 
 export const Header: React.FC = () => {
+  const { user, switchUser, logout, loading } = useAuth();
+
   return (
     <header className="border-b border-slate-800 bg-slate-900/90 backdrop-blur sticky top-0 z-50">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
@@ -69,9 +73,54 @@ export const Header: React.FC = () => {
           </NavLink>
         </nav>
 
-        {/* System Health Badge */}
-        <div className="hidden md:flex items-center">
+        {/* Right Action Bar: Quick Demo Role Switcher & Health Badge */}
+        <div className="hidden lg:flex items-center gap-3">
           <ApiHealthBadge />
+
+          {/* Demo User Switcher */}
+          <div className="flex items-center gap-1.5 bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-1 text-xs">
+            <User className="w-3.5 h-3.5 text-slate-400" />
+            <select
+              aria-label="Active Demo Role"
+              value={
+                user?.role === UserRole.AMBULANCE
+                  ? 'paramedic'
+                  : user?.hospitalId === 'hosp-001'
+                  ? 'stjude'
+                  : user?.hospitalId === 'hosp-002'
+                  ? 'bayview'
+                  : user?.role === UserRole.ADMIN
+                  ? 'admin'
+                  : 'paramedic'
+              }
+              onChange={(e) => switchUser(e.target.value as any)}
+              disabled={loading}
+              className="bg-transparent text-slate-200 font-medium text-xs focus:outline-none cursor-pointer"
+            >
+              <option value="paramedic" className="bg-slate-900 text-slate-100">
+                Paramedic Lead (Ambulance)
+              </option>
+              <option value="stjude" className="bg-slate-900 text-slate-100">
+                St. Jude ED (Hospital A)
+              </option>
+              <option value="bayview" className="bg-slate-900 text-slate-100">
+                Bayview Urgent (Hospital B)
+              </option>
+              <option value="admin" className="bg-slate-900 text-slate-100">
+                System Dispatcher (Admin)
+              </option>
+            </select>
+
+            {user && (
+              <button
+                onClick={logout}
+                title="Logout"
+                className="text-slate-500 hover:text-rose-400 transition-colors ml-1"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
         </div>
       </div>
     </header>

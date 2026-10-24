@@ -1,16 +1,13 @@
-import { checkDatabaseHealth } from './index.js';
-import { INITIAL_HOSPITALS_PLACEHOLDER } from '@goldenhour/scenario-fixtures';
+import { store } from './store.js';
 
 export async function runSeed() {
-  console.log('[Seed] Checking database connectivity...');
-  const health = await checkDatabaseHealth();
-  if (health.status !== 'connected') {
-    console.warn('[Seed] Database not available:', health.error);
-    console.log('[Seed] Skipping database seed for Phase 1 foundation.');
-    console.log(`[Seed] Fixture placeholder loaded: ${INITIAL_HOSPITALS_PLACEHOLDER.length} hospitals defined.`);
-    return;
-  }
-  console.log('[Seed] Ready for Phase 2 database seeding.');
+  console.log('[Seed] Populating GoldenHour synthetic scenario store...');
+  await store.seed();
+  console.log('[Seed] Seeding completed successfully:');
+  console.log(`  - Hospitals: ${store.listHospitals().length}`);
+  console.log(`  - Resource Pools: ${store.resourcePools.size}`);
+  console.log(`  - Staff Slots: ${store.staffAvailability.size}`);
+  console.log(`  - Demo Users: ${store.users.size}`);
 }
 
 if (process.argv[1]?.includes('seed.ts')) {
