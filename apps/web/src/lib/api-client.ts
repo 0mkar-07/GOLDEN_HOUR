@@ -4,8 +4,10 @@ import {
   UserDto,
   HospitalDto,
   ResourcePoolDto,
+  StaffAvailabilityDto,
   UpdateHospitalRequest,
   UpdateResourcePoolRequest,
+  UpdateStaffAvailabilityRequest,
 } from '@goldenhour/contracts';
 
 export class ApiError extends Error {
@@ -96,6 +98,22 @@ export const apiClient = {
 
   async updateResourcePool(id: string, updates: UpdateResourcePoolRequest): Promise<{ resourcePool: ResourcePoolDto }> {
     return request<{ resourcePool: ResourcePoolDto }>(`/api/v1/resource-pools/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(updates),
+    });
+  },
+
+  async getHospitalStaff(id: string): Promise<{ staffAvailability: StaffAvailabilityDto[] }> {
+    return request<{ staffAvailability: StaffAvailabilityDto[] }>(`/api/v1/hospitals/${id}/staff`, {
+      method: 'GET',
+    });
+  },
+
+  async updateStaffAvailability(
+    id: string,
+    updates: UpdateStaffAvailabilityRequest
+  ): Promise<{ staffAvailability: StaffAvailabilityDto }> {
+    return request<{ staffAvailability: StaffAvailabilityDto }>(`/api/v1/staff-availability/${id}`, {
       method: 'PATCH',
       body: JSON.stringify(updates),
     });

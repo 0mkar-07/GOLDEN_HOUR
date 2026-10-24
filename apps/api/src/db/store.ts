@@ -207,6 +207,46 @@ class GoldenHourDatabaseStore {
     return Array.from(this.staffAvailability.values()).filter((s) => s.hospitalId === hospitalId);
   }
 
+  public getStaff(id: string): StaffAvailabilityDto | undefined {
+    return this.staffAvailability.get(id);
+  }
+
+  public updateStaffAvailability(
+    id: string,
+    updates: {
+      availableTeamSlots?: number;
+      readyAt?: string;
+      expectedVersion: number;
+    }
+  ): StaffAvailabilityDto {
+    const staff = this.staffAvailability.get(id);
+    if (!staff) {
+      throw new Error(`Staff availability record not found: ${id}`);
+    }
+
+    if (staff.version !== updates.expectedVersion) {
+      throw new Error(`Version conflict on staff availability: expected ${updates.expectedVersion}, got ${staff.version}`);
+    }
+
+    const availableTeamSlots = updates.availableTeamSlots ?? staff.availableTeamSlots;
+    if (availableTeamSlots < 0) {
+      throw new Error('Available team slots cannot be negative');
+    }
+
+    const readyAt = updates.readyAt ?? staff.readyAt;
+
+    const updated: StaffAvailabilityDto = {
+      ...staff,
+      availableTeamSlots,
+      readyAt,
+      version: staff.version + 1,
+      updatedAt: new Date().toISOString(),
+    };
+
+    this.staffAvailability.set(id, updated);
+    return updated;
+  }
+
   // --- Audit Events ---
   public recordAudit(event: Omit<AuditEventDto, 'id' | 'timestamp'>): AuditEventDto {
     const audit: AuditEventDto = {

@@ -38,6 +38,14 @@ export const UpdateResourcePoolRequestSchema = z.object({
 
 export type UpdateResourcePoolRequest = z.infer<typeof UpdateResourcePoolRequestSchema>;
 
+export const UpdateStaffAvailabilityRequestSchema = z.object({
+  availableTeamSlots: z.number().int().nonnegative().optional(),
+  readyAt: z.string().optional(),
+  expectedVersion: z.number().int().positive(),
+});
+
+export type UpdateStaffAvailabilityRequest = z.infer<typeof UpdateStaffAvailabilityRequestSchema>;
+
 export const AllocationSchema = z.object({
   id: z.string(),
   caseId: z.string(),

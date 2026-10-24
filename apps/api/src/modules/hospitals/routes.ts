@@ -2,6 +2,7 @@ import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import {
   UpdateHospitalRequestSchema,
   UpdateResourcePoolRequestSchema,
+  UpdateStaffAvailabilityRequestSchema,
   UserRole,
 } from '@goldenhour/contracts';
 import { store } from '../../db/store.js';
@@ -159,6 +160,64 @@ export async function registerHospitalRoutes(fastify: FastifyInstance) {
     async (req, reply: FastifyReply) => {
       const staff = store.listStaffByHospital(req.params.id);
       return reply.status(200).send({ staffAvailability: staff });
+    }
+  );
+
+  // Update staff readiness (Enforces ownership check and version conflict check)
+  fastify.patch<{ Params: IdParams; Body: unknown }>(
+    '/api/v1/staff-availability/:id',
+    { preHandler: [requireAuth] },
+    async (req, reply: FastifyReply) => {
+      const parseResult = UpdateStaffAvailabilityRequestSchema.safeParse(req.body);
+      if (!parseResult.success) {
+        return reply.status(400).send({
+          code: 'VALIDATION_ERROR',
+          message: 'Invalid update staff availability payload',
+          details: parseResult.error.format(),
+        });
+      }
+
+      const staff = store.getStaff(req.params.id);
+      if (!staff) {
+        return reply.status(404).send({
+          code: 'NOT_FOUND',
+          message: `Staff availability record not found: ${req.params.id}`,
+        });
+      }
+
+      // Check hospital ownership if user is HOSPITAL role
+      if (req.user!.role === UserRole.HOSPITAL && req.user!.hospitalId !== staff.hospitalId) {
+        return reply.status(403).send({
+          code: 'FORBIDDEN',
+          message: `Cross-hospital access denied: User belongs to ${req.user!.hospitalId}, cannot mutate staff of ${staff.hospitalId}`,
+        });
+      }
+
+      try {
+        const updated = store.updateStaffAvailability(req.params.id, parseResult.data);
+
+        store.recordAudit({
+          actorId: req.user!.id,
+          actorRole: req.user!.role,
+          action: 'STAFF_AVAILABILITY_UPDATE',
+          entityType: 'STAFF_AVAILABILITY',
+          entityId: req.params.id,
+          details: parseResult.data,
+        });
+
+        return reply.status(200).send({ staffAvailability: updated });
+      } catch (err: any) {
+        if (err.message.includes('Version conflict')) {
+          return reply.status(409).send({
+            code: 'VERSION_CONFLICT',
+            message: err.message,
+          });
+        }
+        return reply.status(400).send({
+          code: 'UPDATE_FAILED',
+          message: err.message,
+        });
+      }
     }
   );
 }
