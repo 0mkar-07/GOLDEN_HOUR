@@ -94,6 +94,8 @@ Generate the required JSON output:
       : ['STABILIZATION', 'BASIC_OXYGEN'],
     reasons: Array.isArray(parsed.reasons) ? parsed.reasons : ['Agent 1 Gemini Analysis Complete.'],
     missingInputs: Array.isArray(parsed.missingInputs) ? parsed.missingInputs : [],
+    interpreterType: 'GEMINI_LLM',
+    confidence: 0.95,
   };
 }
 

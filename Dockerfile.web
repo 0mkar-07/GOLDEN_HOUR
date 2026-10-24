@@ -1,0 +1,30 @@
+# Multi-stage Dockerfile for GoldenHour Web Frontend + Nginx Reverse Proxy
+FROM node:20-alpine AS base
+RUN corepack enable && corepack prepare pnpm@9.15.4 --activate
+WORKDIR /app
+
+FROM base AS dependencies
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY packages/contracts/package.json ./packages/contracts/
+COPY packages/scenario-fixtures/package.json ./packages/scenario-fixtures/
+COPY apps/web/package.json ./apps/web/
+RUN pnpm install --frozen-lockfile
+
+FROM dependencies AS builder
+COPY packages/contracts ./packages/contracts
+COPY packages/scenario-fixtures ./packages/scenario-fixtures
+COPY apps/web ./apps/web
+COPY tsconfig.json ./
+RUN pnpm --filter @goldenhour/contracts build
+RUN pnpm --filter @goldenhour/scenario-fixtures build
+RUN pnpm --filter @goldenhour/web build
+
+FROM nginx:1.25-alpine AS runner
+COPY --from=builder /app/apps/web/dist /usr/share/nginx/html
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+
+EXPOSE 80
+HEALTHCHECK --interval=15s --timeout=5s --start-period=5s --retries=3 \
+  CMD wget --no-verbose --tries=1 --spider http://localhost/health || exit 1
+
+CMD ["nginx", "-g", "daemon off;"]

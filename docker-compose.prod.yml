@@ -1,0 +1,53 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: goldenhour-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: goldenhour
+      POSTGRES_PASSWORD: goldenhour_dev_password
+      POSTGRES_DB: goldenhour
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U goldenhour -d goldenhour"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    container_name: goldenhour-api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 4000
+      API_HOST: 0.0.0.0
+      DATABASE_URL: postgres://goldenhour:goldenhour_dev_password@postgres:5432/goldenhour
+      CORS_ORIGIN: "http://localhost:3000,http://localhost"
+      JWT_SECRET: super-secret-golden-hour-jwt-key-for-prod
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      LIVE_ROUTING_URL: ${LIVE_ROUTING_URL:-}
+    ports:
+      - "4000:4000"
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+    container_name: goldenhour-web
+    restart: unless-stopped
+    depends_on:
+      - api
+    ports:
+      - "3000:80"
+
+volumes:
+  pgdata:

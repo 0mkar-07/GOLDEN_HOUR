@@ -12,7 +12,8 @@
     "test": "pnpm --recursive run test",
     "lint": "pnpm --recursive run lint",
     "migrate": "pnpm --filter @goldenhour/api migrate",
-    "seed": "pnpm --filter @goldenhour/api seed"
+    "seed": "pnpm --filter @goldenhour/api seed",
+    "reset-demo": "pnpm --filter @goldenhour/api seed"
   },
   "devDependencies": {
     "typescript": "^5.7.3",

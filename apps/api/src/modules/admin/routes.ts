@@ -7,6 +7,7 @@ import {
 } from '@goldenhour/contracts';
 import { store } from '../../db/store.js';
 import { requireAuth, requireRole } from '../auth/plugin.js';
+import { config } from '../../config.js';
 
 export async function adminRoutes(fastify: FastifyInstance) {
   // Apply admin authorization check to all routes in this plugin
@@ -141,8 +142,15 @@ export async function adminRoutes(fastify: FastifyInstance) {
   /**
    * POST /api/v1/admin/reset
    * Admin-only synthetic demo scenario reset.
+   * Guarded against unintended production execution.
    */
   fastify.post('/api/v1/admin/reset', async (req: FastifyRequest, reply: FastifyReply) => {
+    if (config.env === 'production' && process.env.ALLOW_DEMO_RESET !== 'true') {
+      return reply.status(403).send({
+        code: 'FORBIDDEN',
+        message: 'Destructive demo scenario reset is strictly disabled in production environments.',
+      });
+    }
     store.resetDemoScenario(req.user!.id);
     return reply.status(200).send({
       message: 'Demo scenario reset successfully to baseline synthetic state',

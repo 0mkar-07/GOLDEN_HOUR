@@ -49,6 +49,7 @@ export function runAgent3(
     careStartSeconds: number;
     timeToCareSeconds: number;
     reasons: string[];
+    routingSource: 'SIMULATED_GRAPH' | 'LIVE_OSRM' | 'FALLBACK_GRAPH';
   }[] = [];
 
   for (const item of evaluations) {
@@ -56,9 +57,11 @@ export function runAgent3(
     const toNodeId = HOSPITAL_NODE_MAP[hosp.id] || 'node-hosp-a';
 
     let travelSeconds = 9999;
+    let routingSource: 'SIMULATED_GRAPH' | 'LIVE_OSRM' | 'FALLBACK_GRAPH' = 'SIMULATED_GRAPH';
     try {
       const route = routing.calculateRoute(fromNode.id, toNodeId, trafficOverrides);
       travelSeconds = route.travelSeconds;
+      routingSource = route.routingSource ?? 'SIMULATED_GRAPH';
     } catch {
       travelSeconds = 9999;
     }
@@ -76,6 +79,7 @@ export function runAgent3(
       careStartSeconds,
       timeToCareSeconds,
       reasons: [...item.fullCareReasons],
+      routingSource,
     });
   }
 
@@ -106,6 +110,7 @@ export function runAgent3(
       ],
       missingCapabilities: [],
       readiness: DestinationReadiness.PENDING,
+      routingSource: best.routingSource,
     };
   }
 
@@ -137,6 +142,7 @@ export function runAgent3(
       ],
       missingCapabilities: bestB.evaluation.missingFullCareCapabilities,
       readiness: DestinationReadiness.PENDING,
+      routingSource: bestB.routingSource,
     };
   }
 
@@ -161,6 +167,7 @@ export function runAgent3(
       ],
       missingCapabilities: bestC.evaluation.missingFullCareCapabilities,
       readiness: DestinationReadiness.PENDING,
+      routingSource: bestC.routingSource,
     };
   }
 
@@ -194,6 +201,7 @@ export function runAgent3(
         : score.reasons,
       missingCapabilities: score.evaluation.missingFullCareCapabilities,
       readiness: DestinationReadiness.PENDING,
+      routingSource: score.routingSource,
     };
   });
 

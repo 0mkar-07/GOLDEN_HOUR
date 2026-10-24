@@ -85,6 +85,8 @@ export const Agent1ProposalSchema = z.object({
   proposedStabilizationNeeds: z.array(z.string()),
   reasons: z.array(z.string()),
   missingInputs: z.array(z.string()),
+  interpreterType: z.enum(['GEMINI_LLM', 'DETERMINISTIC_RULES']).optional(),
+  confidence: z.number().min(0).max(1).optional(),
 });
 
 export type Agent1Proposal = z.infer<typeof Agent1ProposalSchema>;

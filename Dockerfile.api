@@ -1,0 +1,43 @@
+# Multi-stage Dockerfile for GoldenHour Fastify API
+FROM node:20-alpine AS base
+RUN corepack enable && corepack prepare pnpm@9.15.4 --activate
+WORKDIR /app
+
+FROM base AS dependencies
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY packages/contracts/package.json ./packages/contracts/
+COPY packages/scenario-fixtures/package.json ./packages/scenario-fixtures/
+COPY apps/api/package.json ./apps/api/
+RUN pnpm install --frozen-lockfile
+
+FROM dependencies AS builder
+COPY packages/contracts ./packages/contracts
+COPY packages/scenario-fixtures ./packages/scenario-fixtures
+COPY apps/api ./apps/api
+COPY tsconfig.json ./
+RUN pnpm --filter @goldenhour/contracts build
+RUN pnpm --filter @goldenhour/scenario-fixtures build
+RUN pnpm --filter @goldenhour/api build
+
+FROM node:20-alpine AS runner
+WORKDIR /app
+ENV NODE_ENV=production
+RUN corepack enable && corepack prepare pnpm@9.15.4 --activate
+
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY packages/contracts/package.json ./packages/contracts/
+COPY packages/scenario-fixtures/package.json ./packages/scenario-fixtures/
+COPY apps/api/package.json ./apps/api/
+RUN pnpm install --prod --frozen-lockfile
+
+COPY --from=builder /app/packages/contracts/dist ./packages/contracts/dist
+COPY --from=builder /app/packages/scenario-fixtures/dist ./packages/scenario-fixtures/dist
+COPY --from=builder /app/apps/api/dist ./apps/api/dist
+
+USER node
+EXPOSE 4000
+
+HEALTHCHECK --interval=15s --timeout=5s --start-period=5s --retries=3 \
+  CMD wget --no-verbose --tries=1 --spider http://localhost:4000/health/ready || exit 1
+
+CMD ["node", "apps/api/dist/index.js"]

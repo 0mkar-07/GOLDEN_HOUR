@@ -833,10 +833,22 @@ export const AmbulancePage: React.FC = () => {
           <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-4">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <div>
-                <h2 className="text-base font-bold text-white flex items-center gap-2">
-                  <ClipboardCheck className="w-5 h-5 text-amber-400" />
-                  Agent 1 — Requirements Synthesis
-                </h2>
+                <div className="flex items-center gap-2">
+                  <h2 className="text-base font-bold text-white flex items-center gap-2">
+                    <ClipboardCheck className="w-5 h-5 text-amber-400" />
+                    Agent 1 — Requirements Synthesis
+                  </h2>
+                  {agent1Proposal?.interpreterType === 'GEMINI_LLM' ? (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-purple-500/15 text-purple-300 border border-purple-500/30">
+                      <Sparkles className="w-3 h-3 text-purple-400" />
+                      Gemini 3.5 AI Model
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-500/15 text-blue-300 border border-blue-500/30">
+                      Clinical Rules Engine
+                    </span>
+                  )}
+                </div>
                 <p className="text-xs text-slate-400 mt-0.5">
                   Proposed full-care & stabilization criteria awaiting clinician confirmation.
                 </p>

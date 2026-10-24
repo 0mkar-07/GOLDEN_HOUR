@@ -15,6 +15,7 @@ export const CandidateEvaluationSchema = z.object({
   reasons: z.array(z.string()),
   missingCapabilities: z.array(z.string()),
   readiness: z.nativeEnum(DestinationReadiness),
+  routingSource: z.enum(['SIMULATED_GRAPH', 'LIVE_OSRM', 'FALLBACK_GRAPH']).optional(),
 });
 
 export type CandidateEvaluationDto = z.infer<typeof CandidateEvaluationSchema>;

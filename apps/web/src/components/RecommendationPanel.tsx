@@ -125,6 +125,12 @@ export const RecommendationPanel: React.FC<RecommendationPanelProps> = ({
                   <span className="text-red-400">Estimated Care Start:</span>
                   <span className="text-emerald-400">~{Math.round(hospitalA.timeToCareSeconds / 60)} mins</span>
                 </div>
+                <div className="flex justify-between items-center pt-1 text-[11px] text-slate-500 font-sans">
+                  <span>Routing Engine:</span>
+                  <span className="font-semibold text-slate-400">
+                    {hospitalA.routingSource === 'LIVE_OSRM' ? 'Live Routing Engine' : 'Simulated Road Graph'}
+                  </span>
+                </div>
               </div>
 
               {/* Rationale */}
@@ -221,6 +227,12 @@ export const RecommendationPanel: React.FC<RecommendationPanelProps> = ({
                   <span className="text-slate-300">Time to Care:</span>
                   <span className="text-slate-200">~{Math.round(hospitalB.timeToCareSeconds / 60)} mins</span>
                 </div>
+                <div className="flex justify-between items-center pt-1 text-[10px] text-slate-500 font-sans">
+                  <span>Routing:</span>
+                  <span className="font-semibold text-slate-400">
+                    {hospitalB.routingSource === 'LIVE_OSRM' ? 'Live Routing Engine' : 'Simulated Road Graph'}
+                  </span>
+                </div>
               </div>
 
               {/* Capabilities & Limitations */}
@@ -282,6 +294,12 @@ export const RecommendationPanel: React.FC<RecommendationPanelProps> = ({
                 <div className="flex justify-between items-center pt-1.5 border-t border-slate-800 text-xs font-bold">
                   <span className="text-slate-300">Time to Care:</span>
                   <span className="text-slate-200">~{Math.round(hospitalC.timeToCareSeconds / 60)} mins</span>
+                </div>
+                <div className="flex justify-between items-center pt-1 text-[10px] text-slate-500 font-sans">
+                  <span>Routing:</span>
+                  <span className="font-semibold text-slate-400">
+                    {hospitalC.routingSource === 'LIVE_OSRM' ? 'Live Routing Engine' : 'Simulated Road Graph'}
+                  </span>
                 </div>
               </div>
 

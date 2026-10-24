@@ -1,5 +1,5 @@
 import { AssessmentObservationsDto, Agent1Proposal } from '@goldenhour/contracts';
-import { isGeminiAvailable, callGeminiAgent1 } from './gemini.js';
+import { getRequirementsInterpreter } from './interpreter.js';
 
 export const AGENT_1_VERSION = '2.0.0-gemini-hybrid';
 
@@ -128,21 +128,16 @@ export function runAgent1(observations: AssessmentObservationsDto): Agent1Propos
     proposedStabilizationNeeds: Array.from(stabilizationNeeds),
     reasons,
     missingInputs,
+    interpreterType: 'DETERMINISTIC_RULES',
+    confidence: 1.0,
   };
 }
 
 /**
  * Asynchronous Agent 1 Runner
- * If Gemini API is configured, uses Gemini 2.5 Flash LLM Agent.
- * Gracefully falls back to rule-based analysis if key is absent or network fails.
+ * Uses the configured RequirementsInterpreter (Gemini LLM with graceful deterministic fallback).
  */
 export async function runAgent1Async(observations: AssessmentObservationsDto): Promise<Agent1Proposal> {
-  if (isGeminiAvailable()) {
-    try {
-      return await callGeminiAgent1(observations);
-    } catch (err: any) {
-      console.warn('[Agent 1] Gemini LLM call failed, using fallback:', err.message);
-    }
-  }
-  return runAgent1(observations);
+  const interpreter = getRequirementsInterpreter();
+  return interpreter.interpret(observations);
 }
