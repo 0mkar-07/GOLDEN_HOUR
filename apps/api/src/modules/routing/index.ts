@@ -282,7 +282,7 @@ export class GoogleRoutesProvider implements GeographicRoutingProvider {
   private apiKey: string;
 
   constructor(apiKey?: string, graph: RoadGraphDto = SEEDED_ROAD_GRAPH) {
-    this.apiKey = apiKey || process.env.GOOGLE_ROUTES_API_KEY || '';
+    this.apiKey = apiKey || process.env.GOOGLE_MAPS_API_KEY || process.env.GOOGLE_ROUTES_API_KEY || '';
     this.fallbackProvider = new SimulatedGeographicRoutingProvider(graph);
   }
 
@@ -397,8 +397,9 @@ export function getRoutingProvider(): RoutingProvider {
 export const routingProvider = getRoutingProvider();
 
 export function getGeographicRoutingProvider(): GeographicRoutingProvider {
-  if (process.env.GOOGLE_ROUTES_API_KEY) {
-    return new GoogleRoutesProvider(process.env.GOOGLE_ROUTES_API_KEY);
+  const apiKey = process.env.GOOGLE_MAPS_API_KEY || process.env.GOOGLE_ROUTES_API_KEY;
+  if (apiKey) {
+    return new GoogleRoutesProvider(apiKey);
   }
   return new SimulatedGeographicRoutingProvider();
 }
