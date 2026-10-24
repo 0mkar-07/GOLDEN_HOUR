@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import * as THREE from 'three';
 import {
   Play,
   Pause,
@@ -11,18 +12,26 @@ import {
   Compass,
   CheckCircle2,
   Navigation,
+  Box,
+  Layers,
+  Eye,
+  Camera,
 } from 'lucide-react';
 import { apiClient } from '../lib/api-client';
 import { subscribeToRealtimeEvent } from '../lib/socket';
 
-// Deterministic coordinate projection: Map (x, y) [0, 500] -> 3D (X, Z) [-10, 10]
-function mapToScene(x: number, y: number): [number, number, number] {
-  return [(x - 250) * 0.05, 0, (y - 250) * 0.05];
-}
-
 interface Simulation3DViewProps {
   onTraceCase?: (caseId: string) => void;
   activeCaseId?: string;
+}
+
+// Coordinate projection from 2D coordinates (x, y) [0, 500] to Three.js scene coordinates (X, Y, Z)
+function mapTo3D(x: number, y: number): [number, number, number] {
+  // Center at NITK Incident Scene (x: 120, y: 150) -> Scene (0, 0, 0)
+  const scale = 0.35;
+  const sceneX = (x - 200) * scale;
+  const sceneZ = (y - 200) * scale;
+  return [sceneX, 0, sceneZ];
 }
 
 export const Simulation3DView: React.FC<Simulation3DViewProps> = ({ activeCaseId }) => {
@@ -31,6 +40,18 @@ export const Simulation3DView: React.FC<Simulation3DViewProps> = ({ activeCaseId
   const [speedMultiplier, setSpeedMultiplier] = useState(1.0);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [is3DMode, setIs3DMode] = useState<boolean>(true);
+  const [cameraView, setCameraView] = useState<'follow' | 'isometric' | 'top'>('isometric');
+
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const threeStateRef = useRef<{
+    renderer?: THREE.WebGLRenderer;
+    scene?: THREE.Scene;
+    camera?: THREE.PerspectiveCamera;
+    ambulanceMesh?: THREE.Group;
+    beaconLight?: THREE.PointLight;
+    animFrameId?: number;
+    controlsTarget?: THREE.Vector3;
+  }>({});
 
   // Check WebGL availability
   const webGLSupported = useMemo(() => {
@@ -40,7 +61,7 @@ export const Simulation3DView: React.FC<Simulation3DViewProps> = ({ activeCaseId
         window.WebGLRenderingContext &&
         (canvas.getContext('webgl') || canvas.getContext('experimental-webgl'))
       );
-    } catch (e) {
+    } catch {
       return false;
     }
   }, []);
@@ -82,6 +103,336 @@ export const Simulation3DView: React.FC<Simulation3DViewProps> = ({ activeCaseId
       unsubTelemetry();
     };
   }, []);
+
+  // -------------------------------------------------------------
+  // Genuine Three.js 3D Scene Initialization & Loop
+  // -------------------------------------------------------------
+  useEffect(() => {
+    if (!is3DMode || !webGLSupported || !canvasRef.current || !simState) return;
+
+    const canvas = canvasRef.current;
+    const width = canvas.parentElement?.clientWidth || 800;
+    const height = 480;
+
+    // 1. Scene, Camera, Renderer
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x0f172a); // Slate-900 sky / fog
+    scene.fog = new THREE.FogExp2(0x0f172a, 0.008);
+
+    const camera = new THREE.PerspectiveCamera(48, width / height, 0.5, 1200);
+    camera.position.set(0, 75, 110);
+
+    const renderer = new THREE.WebGLRenderer({
+      canvas,
+      antialias: true,
+      alpha: false,
+      powerPreference: 'high-performance',
+    });
+    renderer.setSize(width, height);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+    // 2. Lighting (Golden Hour sun & coastal skylight)
+    const sunLight = new THREE.DirectionalLight(0xffedd5, 1.4);
+    sunLight.position.set(60, 90, 40);
+    sunLight.castShadow = true;
+    sunLight.shadow.mapSize.width = 1024;
+    sunLight.shadow.mapSize.height = 1024;
+    scene.add(sunLight);
+
+    const hemiLight = new THREE.HemisphereLight(0x0284c7, 0x064e3b, 0.7);
+    scene.add(hemiLight);
+
+    // 3. Terrain & Water Mesh (NITK Coastline)
+    // Arabian Sea (west / negative X)
+    const seaGeometry = new THREE.PlaneGeometry(160, 360);
+    const seaMaterial = new THREE.MeshStandardMaterial({
+      color: 0x0284c7,
+      roughness: 0.1,
+      metalness: 0.8,
+      transparent: true,
+      opacity: 0.88,
+    });
+    const seaMesh = new THREE.Mesh(seaGeometry, seaMaterial);
+    seaMesh.rotation.x = -Math.PI / 2;
+    seaMesh.position.set(-110, -0.4, 0);
+    scene.add(seaMesh);
+
+    // Beach Sand Strip
+    const beachGeometry = new THREE.PlaneGeometry(24, 360);
+    const beachMaterial = new THREE.MeshStandardMaterial({
+      color: 0xe2e8f0,
+      roughness: 0.9,
+    });
+    const beachMesh = new THREE.Mesh(beachGeometry, beachMaterial);
+    beachMesh.rotation.x = -Math.PI / 2;
+    beachMesh.position.set(-20, -0.2, 0);
+    scene.add(beachMesh);
+
+    // Green Campus Land Plane (NITK Surathkal)
+    const landGeometry = new THREE.PlaneGeometry(260, 360);
+    const landMaterial = new THREE.MeshStandardMaterial({
+      color: 0x064e3b, // Lush deep green
+      roughness: 0.85,
+    });
+    const landMesh = new THREE.Mesh(landGeometry, landMaterial);
+    landMesh.rotation.x = -Math.PI / 2;
+    landMesh.position.set(115, -0.3, 0);
+    landMesh.receiveShadow = true;
+    scene.add(landMesh);
+
+    // 4. Roads (NH 66 Corridor & Campus Links)
+    const roadGraph = simState.roadGraph || { nodes: [], edges: [] };
+    const nodeMap = new Map<string, { x: number; y: number; label: string }>();
+    roadGraph.nodes.forEach((n: any) => nodeMap.set(n.id, n));
+
+    const roadMaterial = new THREE.MeshStandardMaterial({
+      color: 0x1e293b, // Dark asphalt
+      roughness: 0.7,
+    });
+
+    roadGraph.edges.forEach((edge: any) => {
+      const fromNode = nodeMap.get(edge.from);
+      const toNode = nodeMap.get(edge.to);
+      if (!fromNode || !toNode) return;
+
+      const [x1, , z1] = mapTo3D(fromNode.x, fromNode.y);
+      const [x2, , z2] = mapTo3D(toNode.x, toNode.y);
+
+      const dx = x2 - x1;
+      const dz = z2 - z1;
+      const length = Math.sqrt(dx * dx + dz * dz);
+      const angle = Math.atan2(dz, dx);
+
+      const roadRibbon = new THREE.Mesh(new THREE.PlaneGeometry(length, 4.2), roadMaterial);
+      roadRibbon.rotation.x = -Math.PI / 2;
+      roadRibbon.rotation.z = -angle;
+      roadRibbon.position.set((x1 + x2) / 2, 0.05, (z1 + z2) / 2);
+      scene.add(roadRibbon);
+    });
+
+    // 5. Buildings (NITK Main Heritage Building, Library, Departments & Hospitals)
+    const buildingGroup = new THREE.Group();
+
+    // NITK Administrative Heritage Building
+    const heritageGeom = new THREE.BoxGeometry(18, 9, 14);
+    const heritageMat = new THREE.MeshStandardMaterial({ color: 0x991b1b, roughness: 0.6 }); // Terracotta
+    const heritageMesh = new THREE.Mesh(heritageGeom, heritageMat);
+    heritageMesh.position.set(-5, 4.5, -15);
+    heritageMesh.castShadow = true;
+    buildingGroup.add(heritageMesh);
+
+    // NITK Clock Tower
+    const towerGeom = new THREE.BoxGeometry(4.5, 18, 4.5);
+    const towerMat = new THREE.MeshStandardMaterial({ color: 0xb91c1c });
+    const towerMesh = new THREE.Mesh(towerGeom, towerMat);
+    towerMesh.position.set(-5, 9, -15);
+    buildingGroup.add(towerMesh);
+
+    // NITK Central Library & Computer Center
+    const libGeom = new THREE.BoxGeometry(16, 7, 12);
+    const libMat = new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.4 });
+    const libMesh = new THREE.Mesh(libGeom, libMat);
+    libMesh.position.set(16, 3.5, -28);
+    buildingGroup.add(libMesh);
+
+    // Campus Academic Blocks (Mechanical / Chemical)
+    const deptGeom = new THREE.BoxGeometry(14, 6, 10);
+    const deptMat = new THREE.MeshStandardMaterial({ color: 0x475569 });
+    const dept1 = new THREE.Mesh(deptGeom, deptMat);
+    dept1.position.set(38, 3, 5);
+    buildingGroup.add(dept1);
+
+    const dept2 = new THREE.Mesh(deptGeom, deptMat);
+    dept2.position.set(-2, 3, 30);
+    buildingGroup.add(dept2);
+
+    scene.add(buildingGroup);
+
+    // 6. Hospital Landmarks (3D Medical Pins & Helipads)
+    const hospitalPinGroup = new THREE.Group();
+    const hospitalNodes = [
+      { id: 'node-hosp-a', label: 'A.J. Hospital (Metro Trauma A)', x: 380, y: 390, color: 0x059669 },
+      { id: 'node-hosp-b', label: 'Padmavathi Hospital (Surathkal B)', x: 160, y: 220, color: 0xd97706 },
+      { id: 'node-hosp-c', label: 'Srinivas Hospital (Mukka C)', x: 140, y: 80, color: 0x7c3aed },
+      { id: 'node-hosp-d', label: 'KMC Heart Institute (Mangaluru D)', x: 430, y: 460, color: 0x2563eb },
+      { id: 'node-hosp-e', label: 'NITK Health Care Centre (Campus E)', x: 130, y: 170, color: 0x10b981 },
+    ];
+
+    hospitalNodes.forEach((hosp) => {
+      const [hx, , hz] = mapTo3D(hosp.x, hosp.y);
+
+      // Hospital Building block
+      const hGeom = new THREE.BoxGeometry(14, 10, 14);
+      const hMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.5 });
+      const hMesh = new THREE.Mesh(hGeom, hMat);
+      hMesh.position.set(hx, 5, hz);
+      hMesh.castShadow = true;
+      scene.add(hMesh);
+
+      // Rooftop Cross
+      const crossH = new THREE.Mesh(new THREE.BoxGeometry(6, 1.2, 2), new THREE.MeshBasicMaterial({ color: 0xdc2626 }));
+      crossH.position.set(hx, 10.6, hz);
+      const crossV = new THREE.Mesh(new THREE.BoxGeometry(2, 1.2, 6), new THREE.MeshBasicMaterial({ color: 0xdc2626 }));
+      crossV.position.set(hx, 10.6, hz);
+      scene.add(crossH);
+      scene.add(crossV);
+
+      // Vertical beacon column
+      const beaconGeom = new THREE.CylinderGeometry(0.3, 0.3, 40, 8);
+      const beaconMat = new THREE.MeshBasicMaterial({
+        color: hosp.color,
+        transparent: true,
+        opacity: 0.6,
+      });
+      const beaconMesh = new THREE.Mesh(beaconGeom, beaconMat);
+      beaconMesh.position.set(hx, 20, hz);
+      scene.add(beaconMesh);
+    });
+
+    scene.add(hospitalPinGroup);
+
+    // 7. Vegetation (Trees distributed across campus verges)
+    const treeGroup = new THREE.Group();
+    const treeTrunkGeom = new THREE.CylinderGeometry(0.4, 0.6, 3, 6);
+    const treeTrunkMat = new THREE.MeshStandardMaterial({ color: 0x78350f });
+    const foliageGeom = new THREE.ConeGeometry(2.4, 5, 7);
+    const foliageMat = new THREE.MeshStandardMaterial({ color: 0x15803d, roughness: 0.8 });
+
+    const treePositions = [
+      [8, 5], [12, -8], [24, -12], [-14, 8], [-22, -18],
+      [32, 22], [42, -5], [18, 40], [5, -45], [-12, -38],
+      [55, 30], [60, -20], [-25, 45], [28, -50], [45, 60]
+    ];
+
+    treePositions.forEach(([tx, tz]) => {
+      const trunk = new THREE.Mesh(treeTrunkGeom, treeTrunkMat);
+      trunk.position.set(tx, 1.5, tz);
+      const leaves = new THREE.Mesh(foliageGeom, foliageMat);
+      leaves.position.set(tx, 4.8, tz);
+      leaves.castShadow = true;
+      treeGroup.add(trunk);
+      treeGroup.add(leaves);
+    });
+    scene.add(treeGroup);
+
+    // 8. 3D Emergency Ambulance Vehicle
+    const ambulanceGroup = new THREE.Group();
+
+    // Body
+    const ambBodyGeom = new THREE.BoxGeometry(3.6, 2.2, 6.4);
+    const ambBodyMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.3 });
+    const ambBody = new THREE.Mesh(ambBodyGeom, ambBodyMat);
+    ambBody.position.y = 1.4;
+    ambBody.castShadow = true;
+    ambulanceGroup.add(ambBody);
+
+    // Windshield
+    const cabGeom = new THREE.BoxGeometry(3.4, 1.4, 2.2);
+    const cabMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.1 });
+    const cab = new THREE.Mesh(cabGeom, cabMat);
+    cab.position.set(0, 1.9, 1.8);
+    ambulanceGroup.add(cab);
+
+    // Orange reflective side stripes
+    const stripeGeom = new THREE.BoxGeometry(3.64, 0.45, 6.2);
+    const stripeMat = new THREE.MeshStandardMaterial({ color: 0xf97316 });
+    const stripe = new THREE.Mesh(stripeGeom, stripeMat);
+    stripe.position.y = 1.2;
+    ambulanceGroup.add(stripe);
+
+    // Flashing Beacon Light
+    const beaconLight = new THREE.PointLight(0xef4444, 3, 20);
+    beaconLight.position.set(0, 3.2, 0);
+    ambulanceGroup.add(beaconLight);
+
+    const lightbar = new THREE.Mesh(
+      new THREE.BoxGeometry(1.6, 0.3, 0.6),
+      new THREE.MeshBasicMaterial({ color: 0xef4444 })
+    );
+    lightbar.position.set(0, 2.6, 0.2);
+    ambulanceGroup.add(lightbar);
+
+    scene.add(ambulanceGroup);
+
+    // Store references
+    threeStateRef.current = {
+      renderer,
+      scene,
+      camera,
+      ambulanceMesh: ambulanceGroup,
+      beaconLight,
+    };
+
+    // Animation Loop
+    let clock = new THREE.Clock();
+    const animate = () => {
+      threeStateRef.current.animFrameId = requestAnimationFrame(animate);
+
+      const delta = clock.getDelta();
+      const elapsed = clock.getElapsedTime();
+
+      // Beacon flashing effect
+      if (beaconLight) {
+        beaconLight.color.setHex(Math.sin(elapsed * 12) > 0 ? 0xef4444 : 0x3b82f6);
+      }
+
+      // Update ambulance position from simulation state
+      const currentPos = simState?.ambulancePosition;
+      if (currentPos && ambulanceGroup) {
+        const [targetX, , targetZ] = mapTo3D(currentPos.x, currentPos.y);
+        // Smooth interpolation
+        ambulanceGroup.position.x += (targetX - ambulanceGroup.position.x) * 0.15;
+        ambulanceGroup.position.z += (targetZ - ambulanceGroup.position.z) * 0.15;
+
+        // Rotation from heading
+        if (typeof currentPos.heading === 'number') {
+          const targetRad = ((90 - currentPos.heading) * Math.PI) / 180;
+          ambulanceGroup.rotation.y = targetRad;
+        }
+
+        // Camera follow modes
+        if (cameraView === 'follow') {
+          camera.position.x += (ambulanceGroup.position.x - camera.position.x) * 0.08;
+          camera.position.z += (ambulanceGroup.position.z + 55 - camera.position.z) * 0.08;
+          camera.position.y = 42;
+          camera.lookAt(ambulanceGroup.position.x, 2, ambulanceGroup.position.z);
+        } else if (cameraView === 'top') {
+          camera.position.set(20, 160, 20);
+          camera.lookAt(20, 0, 20);
+        } else {
+          // Isometric view
+          camera.position.set(0, 85, 115);
+          camera.lookAt(15, 0, 10);
+        }
+      }
+
+      renderer.render(scene, camera);
+    };
+
+    animate();
+
+    // Resize handler
+    const handleResize = () => {
+      if (!canvas.parentElement) return;
+      const w = canvas.parentElement.clientWidth;
+      camera.aspect = w / height;
+      camera.updateProjectionMatrix();
+      renderer.setSize(w, height);
+    };
+
+    window.addEventListener('resize', handleResize);
+
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      if (threeStateRef.current.animFrameId) {
+        cancelAnimationFrame(threeStateRef.current.animFrameId);
+      }
+      renderer.dispose();
+      scene.clear();
+    };
+  }, [is3DMode, webGLSupported, simState, cameraView]);
 
   // Simulation Controls
   const handlePlay = async () => {
@@ -135,12 +486,11 @@ export const Simulation3DView: React.FC<Simulation3DViewProps> = ({ activeCaseId
     }
   };
 
-  // Scenario Injections
   const handleInjectTraffic = async () => {
     try {
       await apiClient.injectTrafficScenario('edge-1', 3.5);
       fetchState();
-      showToast('Traffic congestion (+350%) injected on Westside Expressway (3.5x multiplier)');
+      showToast('Traffic congestion (+350%) injected on NH 66 corridor (3.5x multiplier)');
     } catch (err: any) {
       showToast(`Error: ${err.message}`);
     }
@@ -150,7 +500,7 @@ export const Simulation3DView: React.FC<Simulation3DViewProps> = ({ activeCaseId
     try {
       await apiClient.injectHospitalSurgeScenario('hosp-001');
       fetchState();
-      showToast('Hospital intake surge (+15m delay) injected at St. Jude');
+      showToast('Hospital intake surge (+15m delay) injected at St. Jude / A.J. Hospital');
     } catch (err: any) {
       showToast(`Error: ${err.message}`);
     }
@@ -178,19 +528,18 @@ export const Simulation3DView: React.FC<Simulation3DViewProps> = ({ activeCaseId
   if (loading || !simState) {
     return (
       <div className="bg-slate-900 border border-slate-800 rounded-2xl p-12 text-center text-slate-400">
-        <Compass className="w-8 h-8 animate-spin mx-auto text-purple-400 mb-2" />
+        <Compass className="w-8 h-8 animate-spin mx-auto text-[#176B68] mb-2" />
         Loading Connected 3D Simulation Engine...
       </div>
     );
   }
 
-  const roadGraph = simState?.roadGraph || { nodes: [], edges: [] };
   const ambulancePosition = simState?.ambulancePosition || {
     x: 120,
     y: 150,
-    lat: 40.71,
-    lng: -74.02,
-    heading: 0,
+    lat: 13.0110,
+    lng: 74.7943,
+    heading: 85,
     speed: 0,
     serverSequence: 1,
   };
@@ -199,7 +548,6 @@ export const Simulation3DView: React.FC<Simulation3DViewProps> = ({ activeCaseId
     speedMultiplier: 1.0,
     simulatedSeconds: 0,
   };
-  const activeRoute = simState?.activeRoute;
 
   return (
     <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-lg space-y-4 p-5">
@@ -208,8 +556,8 @@ export const Simulation3DView: React.FC<Simulation3DViewProps> = ({ activeCaseId
         <div>
           <div className="flex items-center gap-2">
             <h2 className="text-base font-bold text-white flex items-center gap-2">
-              <Compass className="w-5 h-5 text-purple-400" />
-              Connected 3D Digital Twin & Live Network Simulation (Isometric Schematic)
+              <Compass className="w-5 h-5 text-emerald-400" />
+              Connected 3D Digital Twin & Live Network Simulation (NITK Surathkal 3D Environment)
             </h2>
             <span
               className={`text-xs px-2.5 py-0.5 rounded-full font-semibold ${
@@ -218,382 +566,253 @@ export const Simulation3DView: React.FC<Simulation3DViewProps> = ({ activeCaseId
                   : 'bg-slate-800 text-slate-400 border border-slate-700'
               }`}
             >
-              {simulationRun?.running ? 'RUNNING' : 'PAUSED'}
+              {simulationRun?.running ? 'ACTIVE RUN' : 'PAUSED'}
             </span>
           </div>
           <p className="text-xs text-slate-400 mt-0.5">
-            Synchronized with authoritative backend clock. Ambulance moves along real road graph edges with live telemetry.
+            Real spatial context: NH 66 Corridor, Arabian Sea coastline, campus heritage blocks, and regional medical centers.
           </p>
         </div>
 
-        {/* Controls Toolbar */}
-        <div className="flex flex-wrap items-center gap-2">
-          {simulationRun?.running ? (
+        {/* View Mode & Camera Selectors */}
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* 3D vs 2D Fallback Toggle */}
+          <div className="flex items-center bg-slate-800 p-1 rounded-xl border border-slate-700 text-xs">
             <button
-              onClick={handlePause}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-white text-xs font-semibold rounded-lg transition shadow-sm"
+              onClick={() => setIs3DMode(true)}
+              className={`flex items-center gap-1 px-2.5 py-1 rounded-lg font-semibold transition ${
+                is3DMode && webGLSupported
+                  ? 'bg-emerald-600 text-white shadow-xs'
+                  : 'text-slate-400 hover:text-white'
+              }`}
             >
-              <Pause className="w-3.5 h-3.5" />
-              Pause
+              <Box className="w-3.5 h-3.5" />
+              Genuine 3D
             </button>
-          ) : (
             <button
-              onClick={handlePlay}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold rounded-lg transition shadow-sm"
+              onClick={() => setIs3DMode(false)}
+              className={`flex items-center gap-1 px-2.5 py-1 rounded-lg font-semibold transition ${
+                !is3DMode || !webGLSupported
+                  ? 'bg-emerald-600 text-white shadow-xs'
+                  : 'text-slate-400 hover:text-white'
+              }`}
             >
-              <Play className="w-3.5 h-3.5 fill-current" />
-              Play
+              <Layers className="w-3.5 h-3.5" />
+              2D Schematic
             </button>
-          )}
+          </div>
 
+          {/* Camera Angles (in 3D Mode) */}
+          {is3DMode && webGLSupported && (
+            <div className="flex items-center bg-slate-800 p-1 rounded-xl border border-slate-700 text-xs">
+              <button
+                onClick={() => setCameraView('follow')}
+                className={`flex items-center gap-1 px-2 py-1 rounded-lg font-medium transition ${
+                  cameraView === 'follow' ? 'bg-slate-700 text-white' : 'text-slate-400 hover:text-white'
+                }`}
+                title="Follow ambulance vehicle"
+              >
+                <Camera className="w-3.5 h-3.5" />
+                Follow
+              </button>
+              <button
+                onClick={() => setCameraView('isometric')}
+                className={`flex items-center gap-1 px-2 py-1 rounded-lg font-medium transition ${
+                  cameraView === 'isometric' ? 'bg-slate-700 text-white' : 'text-slate-400 hover:text-white'
+                }`}
+                title="Isometric view"
+              >
+                <Eye className="w-3.5 h-3.5" />
+                Isometric
+              </button>
+              <button
+                onClick={() => setCameraView('top')}
+                className={`flex items-center gap-1 px-2 py-1 rounded-lg font-medium transition ${
+                  cameraView === 'top' ? 'bg-slate-700 text-white' : 'text-slate-400 hover:text-white'
+                }`}
+                title="Top-down overview"
+              >
+                Top-Down
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Main Simulation Viewport (Genuine Three.js 3D Canvas or 2D SVG Fallback) */}
+      <div className="relative w-full h-[480px] bg-slate-950 rounded-xl overflow-hidden border border-slate-800 flex items-center justify-center">
+        {is3DMode && webGLSupported ? (
+          <canvas ref={canvasRef} className="w-full h-full block cursor-grab active:cursor-grabbing" />
+        ) : (
+          /* 2D Fallback SVG Rendering */
+          <div className="w-full h-full p-4 relative flex items-center justify-center bg-slate-900">
+            <svg viewBox="0 0 500 500" className="w-full h-full max-w-[480px] max-h-[480px]">
+              {/* Arabian Sea to West */}
+              <rect x="0" y="0" width="100" height="500" fill="#0284C7" opacity="0.3" />
+              <text x="25" y="250" fill="#38BDF8" fontSize="10" fontWeight="bold" transform="rotate(-90 25,250)">
+                Arabian Sea Coastline
+              </text>
+
+              {/* Land */}
+              <rect x="100" y="0" width="400" height="500" fill="#064E3B" opacity="0.2" />
+
+              {/* Roads */}
+              {simState.roadGraph?.edges?.map((edge: any) => {
+                const from = simState.roadGraph.nodes.find((n: any) => n.id === edge.from);
+                const to = simState.roadGraph.nodes.find((n: any) => n.id === edge.to);
+                if (!from || !to) return null;
+                return (
+                  <line
+                    key={edge.id}
+                    x1={from.x}
+                    y1={from.y}
+                    x2={to.x}
+                    y2={to.y}
+                    stroke="#475569"
+                    strokeWidth="5"
+                    strokeLinecap="round"
+                  />
+                );
+              })}
+
+              {/* Hospital Nodes */}
+              {simState.roadGraph?.nodes?.map((node: any) => {
+                const isHosp = node.id.includes('hosp');
+                const label =
+                  node.id === 'node-hosp-a'
+                    ? 'A: St. Jude'
+                    : node.id === 'node-hosp-b'
+                    ? 'B: Bayview'
+                    : node.id === 'node-hosp-c'
+                    ? 'C: Northpoint'
+                    : node.label;
+                return (
+                  <g key={node.id} transform={`translate(${node.x}, ${node.y})`}>
+                    <circle r={isHosp ? 7 : 4} fill={isHosp ? '#10B981' : '#94A3B8'} />
+                    <text y="-9" fontSize="8" fill="#F8FAFC" textAnchor="middle" fontWeight="bold">
+                      {label}
+                    </text>
+                  </g>
+                );
+              })}
+
+              {/* Ambulance Vehicle in 2D */}
+              <g transform={`translate(${ambulancePosition.x}, ${ambulancePosition.y})`}>
+                <circle r="9" fill="#EF4444" className="animate-ping opacity-75" />
+                <circle r="6" fill="#DC2626" />
+                <text y="14" fontSize="9" fill="#FCA5A5" textAnchor="middle" fontWeight="bold">
+                  Medic 104
+                </text>
+              </g>
+            </svg>
+          </div>
+        )}
+
+        {/* Telemetry HUD Overlay */}
+        <div className="absolute top-3 left-3 bg-slate-900/85 backdrop-blur-md border border-slate-700/80 rounded-xl px-3 py-2 text-xs text-white space-y-1 shadow-lg pointer-events-none">
+          <div className="flex items-center gap-2">
+            <Car className="w-3.5 h-3.5 text-emerald-400" />
+            <span className="font-bold tracking-wider">AMBULANCE TELEMETRY</span>
+          </div>
+          <div className="text-[11px] text-slate-300 font-mono">
+            Coord: ({Math.round(ambulancePosition.x)}, {Math.round(ambulancePosition.y)}) • [{ambulancePosition.lat?.toFixed(4)}° N, {ambulancePosition.lng?.toFixed(4)}° E]
+          </div>
+          <div className="text-[10px] text-slate-400">
+            Speed: {Math.round(ambulancePosition.speed || 0)} km/h • Heading: {ambulancePosition.heading}° • {simulationRun.simulatedSeconds || 0}s elapsed
+          </div>
+        </div>
+
+        {/* Toast Status Notice */}
+        {statusMessage && (
+          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-slate-800 border border-emerald-500/40 text-emerald-400 px-4 py-2 rounded-xl text-xs font-semibold shadow-xl flex items-center gap-2 animate-fade-in">
+            <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+            {statusMessage}
+          </div>
+        )}
+      </div>
+
+      {/* Simulator Control Strip */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="flex items-center gap-2 bg-slate-800/80 p-2 rounded-xl border border-slate-700">
+          <button
+            onClick={simulationRun.running ? handlePause : handlePlay}
+            className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-bold transition shadow-xs ${
+              simulationRun.running
+                ? 'bg-amber-600 hover:bg-amber-700 text-white'
+                : 'bg-emerald-600 hover:bg-emerald-700 text-white'
+            }`}
+          >
+            {simulationRun.running ? (
+              <>
+                <Pause className="w-3.5 h-3.5" /> Pause
+              </>
+            ) : (
+              <>
+                <Play className="w-3.5 h-3.5" /> Play
+              </>
+            )}
+          </button>
           <button
             onClick={handleStep}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold rounded-lg transition"
-            title="Step forward 5 seconds"
+            title="Step +5s"
+            className="flex items-center gap-1 px-2.5 py-1.5 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-lg text-xs font-semibold"
           >
             <FastForward className="w-3.5 h-3.5" />
             +5s Step
           </button>
+          <button
+            onClick={handleReset}
+            title="Reset to Origin"
+            className="p-2 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-lg text-xs"
+          >
+            <RotateCcw className="w-3.5 h-3.5" />
+          </button>
+        </div>
 
-          {/* Speed Selector */}
-          <div className="flex items-center bg-slate-950 border border-slate-800 rounded-lg p-0.5 text-xs font-semibold">
-            {[1.0, 2.0, 5.0].map((s) => (
+        {/* Speed Multiplier */}
+        <div className="flex items-center justify-between bg-slate-800/80 px-3 py-2 rounded-xl border border-slate-700 text-xs">
+          <span className="text-slate-400 font-medium">Speed:</span>
+          <div className="flex gap-1">
+            {[1, 2, 5].map((spd) => (
               <button
-                key={s}
-                onClick={() => handleSpeedChange(s)}
-                className={`px-2 py-1 rounded transition ${
-                  speedMultiplier === s
-                    ? 'bg-purple-600 text-white'
-                    : 'text-slate-400 hover:text-slate-200'
+                key={spd}
+                onClick={() => handleSpeedChange(spd)}
+                className={`px-2 py-0.5 rounded text-[11px] font-bold ${
+                  speedMultiplier === spd
+                    ? 'bg-emerald-600 text-white'
+                    : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
                 }`}
               >
-                {s}x
+                {spd}x
               </button>
             ))}
           </div>
-
-          <button
-            onClick={handleReset}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold rounded-lg transition"
-            title="Reset ambulance to start scene"
-          >
-            <RotateCcw className="w-3.5 h-3.5" />
-            Reset
-          </button>
-
-          {/* View Mode Toggle */}
-          <button
-            onClick={() => setIs3DMode(!is3DMode)}
-            className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-purple-300 border border-purple-500/30 text-xs font-semibold rounded-lg transition"
-          >
-            {is3DMode ? 'Switch to 2D Plan' : 'Switch to 3D View'}
-          </button>
         </div>
-      </div>
 
-      {statusMessage && (
-        <div className="p-2.5 bg-purple-500/10 border border-purple-500/30 rounded-xl text-xs text-purple-300 flex items-center gap-2">
-          <CheckCircle2 className="w-4 h-4 text-purple-400 shrink-0" />
-          <span>{statusMessage}</span>
-        </div>
-      )}
-
-      {/* Canvas Viewport (Supports 3D Isometric View & SVG Plan Fallback) */}
-      <div className="relative w-full h-[420px] bg-slate-950 rounded-xl border border-slate-850 overflow-hidden flex items-center justify-center">
-        {/* Render Crisp 2D/3D Digital Twin SVG Canvas */}
-        <svg
-          viewBox="0 0 550 420"
-          className="w-full h-full object-contain select-none"
-          style={{
-            transform: is3DMode ? 'perspective(600px) rotateX(25deg) scale(0.92)' : 'none',
-            transition: 'transform 0.4s ease-out',
-          }}
+        {/* Scenario Injections */}
+        <button
+          onClick={handleInjectTraffic}
+          className="flex items-center justify-center gap-1.5 px-3 py-2 bg-slate-800/80 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-xl text-xs font-medium transition"
         >
-          <defs>
-            <linearGradient id="roadGradient" x1="0" y1="0" x2="1" y2="1">
-              <stop offset="0%" stopColor="#334155" />
-              <stop offset="100%" stopColor="#1e293b" />
-            </linearGradient>
-            <radialGradient id="hospGlowA" cx="50%" cy="50%" r="50%">
-              <stop offset="0%" stopColor="#10b981" stopOpacity="0.8" />
-              <stop offset="100%" stopColor="#10b981" stopOpacity="0" />
-            </radialGradient>
-            <radialGradient id="hospGlowB" cx="50%" cy="50%" r="50%">
-              <stop offset="0%" stopColor="#06b6d4" stopOpacity="0.8" />
-              <stop offset="100%" stopColor="#06b6d4" stopOpacity="0" />
-            </radialGradient>
-            <filter id="glow">
-              <feGaussianBlur stdDeviation="2.5" result="coloredBlur" />
-              <feMerge>
-                <feMergeNode in="coloredBlur" />
-                <feMergeNode in="SourceGraphic" />
-              </feMerge>
-            </filter>
-          </defs>
+          <Flame className="w-3.5 h-3.5 text-amber-400" />
+          Inject Highway Congestion (+350%)
+        </button>
 
-          {/* Grid Background Pattern */}
-          <pattern id="grid" width="30" height="30" patternUnits="userSpaceOnUse">
-            <path d="M 30 0 L 0 0 0 30" fill="none" stroke="#1e293b" strokeWidth="0.5" />
-          </pattern>
-          <rect width="100%" height="100%" fill="url(#grid)" opacity="0.6" />
+        <button
+          onClick={handleInjectSurge}
+          className="flex items-center justify-center gap-1.5 px-3 py-2 bg-slate-800/80 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-xl text-xs font-medium transition"
+        >
+          <AlertTriangle className="w-3.5 h-3.5 text-purple-400" />
+          Inject St. Jude ED Surge (+15m)
+        </button>
 
-          {/* Road Network Edges */}
-          {roadGraph?.edges?.map((edge: any) => {
-            const from = roadGraph.nodes.find((n: any) => n.id === edge.from);
-            const to = roadGraph.nodes.find((n: any) => n.id === edge.to);
-            if (!from || !to) return null;
-
-            const isTraffic = (simState.trafficOverrides?.[edge.id] || edge.trafficMultiplier) > 1.5;
-
-            return (
-              <g key={edge.id}>
-                {/* Road Casing */}
-                <line
-                  x1={from.x}
-                  y1={from.y}
-                  x2={to.x}
-                  y2={to.y}
-                  stroke={isTraffic ? '#e11d48' : '#334155'}
-                  strokeWidth="8"
-                  strokeLinecap="round"
-                />
-                {/* Road Surface */}
-                <line
-                  x1={from.x}
-                  y1={from.y}
-                  x2={to.x}
-                  y2={to.y}
-                  stroke={isTraffic ? '#881337' : '#0f172a'}
-                  strokeWidth="5"
-                  strokeLinecap="round"
-                />
-                {/* Center Stripe */}
-                <line
-                  x1={from.x}
-                  y1={from.y}
-                  x2={to.x}
-                  y2={to.y}
-                  stroke={isTraffic ? '#fb7185' : '#64748b'}
-                  strokeWidth="1"
-                  strokeDasharray="4 4"
-                />
-              </g>
-            );
-          })}
-
-          {/* Active Route Glow Polyline (Dynamic destination from activeRoute) */}
-          {activeRoute && activeRoute.pathNodeIds?.length > 1 ? (
-            activeRoute.pathNodeIds.map((nodeId: string, idx: number) => {
-              if (idx === 0) return null;
-              const prevNode = roadGraph?.nodes?.find((n: any) => n.id === activeRoute.pathNodeIds[idx - 1]);
-              const currNode = roadGraph?.nodes?.find((n: any) => n.id === nodeId);
-              if (!prevNode || !currNode) return null;
-              return (
-                <line
-                  key={`route-seg-${idx}`}
-                  x1={prevNode.x}
-                  y1={prevNode.y}
-                  x2={currNode.x}
-                  y2={currNode.y}
-                  stroke="#10b981"
-                  strokeWidth="3.5"
-                  strokeDasharray="6 4"
-                  opacity="0.85"
-                  filter="url(#glow)"
-                />
-              );
-            })
-          ) : (
-            <line
-              x1={ambulancePosition.x}
-              y1={ambulancePosition.y}
-              x2={roadGraph?.nodes?.find((n: any) => n.id === (activeRoute?.toNodeId || 'node-hosp-a'))?.x ?? 350}
-              y2={roadGraph?.nodes?.find((n: any) => n.id === (activeRoute?.toNodeId || 'node-hosp-a'))?.y ?? 150}
-              stroke="#10b981"
-              strokeWidth="3"
-              strokeDasharray="6 4"
-              opacity="0.8"
-              filter="url(#glow)"
-            />
-          )}
-
-          {/* Contingency Standby Arc to Backup B */}
-          <path
-            d={`M ${ambulancePosition.x} ${ambulancePosition.y} Q ${(ambulancePosition.x + 150) / 2} ${(ambulancePosition.y + 220) / 2 - 20} 150 220`}
-            fill="none"
-            stroke="#06b6d4"
-            strokeWidth="2"
-            strokeDasharray="4 3"
-            opacity="0.7"
-          />
-
-          {/* Hospital Nodes with 3D-Style Isometric Prisms */}
-          {roadGraph?.nodes?.map((node: any) => {
-            const isHospA = node.id === 'node-hosp-a';
-            const isHospB = node.id === 'node-hosp-b';
-            const isHospC = node.id === 'node-hosp-c';
-            const isHosp = node.id.startsWith('node-hosp');
-
-            if (!isHosp) {
-              return (
-                <circle
-                  key={node.id}
-                  cx={node.x}
-                  cy={node.y}
-                  r="3.5"
-                  fill="#475569"
-                  stroke="#0f172a"
-                  strokeWidth="1.5"
-                />
-              );
-            }
-
-            const color = isHospA ? '#10b981' : isHospB ? '#06b6d4' : isHospC ? '#f59e0b' : '#64748b';
-            const label = isHospA ? 'A: St. Jude' : isHospB ? 'B: Bayview' : isHospC ? 'C: Northpoint' : node.label.split(' ')[0];
-
-            return (
-              <g key={node.id} className="cursor-pointer">
-                {/* Halo */}
-                <circle
-                  cx={node.x}
-                  cy={node.y}
-                  r="18"
-                  fill={isHospA ? 'url(#hospGlowA)' : isHospB ? 'url(#hospGlowB)' : 'transparent'}
-                />
-                {/* 3D Hospital Prism Box */}
-                <rect
-                  x={node.x - 10}
-                  y={node.y - 10}
-                  width="20"
-                  height="20"
-                  rx="4"
-                  fill={color}
-                  filter="url(#glow)"
-                  stroke="#ffffff"
-                  strokeWidth="1.5"
-                />
-                {/* Cross Emblem */}
-                <path
-                  d={`M ${node.x} ${node.y - 5} L ${node.x} ${node.y + 5} M ${node.x - 5} ${node.y} L ${node.x + 5} ${node.y}`}
-                  stroke="#ffffff"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                />
-                {/* Name Label */}
-                <text
-                  x={node.x}
-                  y={node.y + 20}
-                  textAnchor="middle"
-                  fill="#e2e8f0"
-                  fontSize="9"
-                  fontWeight="bold"
-                  className="font-mono drop-shadow"
-                >
-                  {label}
-                </text>
-              </g>
-            );
-          })}
-
-          {/* Animated Ambulance Vehicle */}
-          <g
-            transform={`translate(${ambulancePosition.x}, ${ambulancePosition.y}) rotate(${ambulancePosition.heading || 0})`}
-            className="transition-transform duration-300 ease-linear"
-          >
-            {/* Vehicle Shadow */}
-            <ellipse cx="0" cy="2" rx="14" ry="8" fill="#000000" opacity="0.6" />
-            {/* Vehicle Body */}
-            <rect
-              x="-12"
-              y="-7"
-              width="24"
-              height="14"
-              rx="3"
-              fill="#ffffff"
-              stroke="#0f172a"
-              strokeWidth="1.5"
-            />
-            {/* Cab Windshield */}
-            <rect x="5" y="-5" width="4" height="10" rx="1" fill="#38bdf8" />
-            {/* Flashing Lightbar */}
-            <circle cx="-2" cy="-4" r="2.5" fill="#ef4444" className="animate-pulse" />
-            <circle cx="-2" cy="4" r="2.5" fill="#3b82f6" className="animate-pulse" />
-            {/* Heading indicator */}
-            <polygon points="12,0 9,-3 9,3" fill="#ef4444" />
-          </g>
-        </svg>
-
-        {/* Real-time HUD Overlay */}
-        <div className="absolute top-3 left-3 bg-slate-900/90 backdrop-blur-md border border-slate-800 px-3 py-2 rounded-xl text-xs space-y-1 font-mono text-slate-300">
-          <div className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-            <span className="font-bold text-white">AMBULANCE TELEMETRY</span>
-          </div>
-          <div className="text-[11px] text-slate-400">
-            Coord: ({ambulancePosition.x}, {ambulancePosition.y}) • Seq: #{ambulancePosition.serverSequence}
-          </div>
-          <div className="text-[11px] text-slate-400">
-            Speed: {ambulancePosition.speed} km/h • Heading: {ambulancePosition.heading}°
-          </div>
-          <div className="text-[11px] text-emerald-400 font-bold">
-            Sim Clock: {Math.round(simulationRun?.simulatedSeconds ?? 0)}s elapsed
-          </div>
-        </div>
-
-        {/* Legend Overlay */}
-        <div className="absolute bottom-3 right-3 bg-slate-900/90 backdrop-blur-md border border-slate-800 p-2.5 rounded-xl text-[10px] space-y-1 text-slate-300">
-          <div className="flex items-center gap-2">
-            <div className="w-2.5 h-2.5 rounded bg-emerald-500" />
-            <span>Primary Destination A (Full-Care)</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="w-2.5 h-2.5 rounded bg-cyan-500" />
-            <span>Stabilization Backup B (Standby)</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="w-2.5 h-2.5 rounded bg-rose-500" />
-            <span>Congested Roadway Segment</span>
-          </div>
-        </div>
-      </div>
-
-      {/* Scenario Injection Action Strip */}
-      <div className="p-4 bg-slate-950 border border-slate-850 rounded-xl space-y-3">
-        <div className="flex items-center justify-between">
-          <h3 className="text-xs font-bold text-slate-200 uppercase tracking-wider flex items-center gap-1.5">
-            <Flame className="w-4 h-4 text-amber-400" />
-            Dynamic Scenario Injections (Route through Real Domain Services)
-          </h3>
-          <span className="text-[11px] text-slate-500">
-            Demonstrates real-time contingency routing and invariant preservation
-          </span>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <button
-            onClick={handleInjectTraffic}
-            className="flex items-center justify-center gap-2 p-2.5 bg-slate-900 hover:bg-slate-850 border border-slate-800 hover:border-amber-500/40 text-slate-200 text-xs font-semibold rounded-xl transition shadow-sm"
-          >
-            <AlertTriangle className="w-4 h-4 text-amber-400" />
-            Inject Highway Congestion (+3.5x)
-          </button>
-
-          <button
-            onClick={handleInjectSurge}
-            className="flex items-center justify-center gap-2 p-2.5 bg-slate-900 hover:bg-slate-850 border border-slate-800 hover:border-rose-500/40 text-slate-200 text-xs font-semibold rounded-xl transition shadow-sm"
-          >
-            <Activity className="w-4 h-4 text-rose-400" />
-            Inject St. Jude ED Surge (+15m)
-          </button>
-
-          <button
-            onClick={handleInjectDecomp}
-            className="flex items-center justify-center gap-2 p-2.5 bg-slate-900 hover:bg-slate-850 border border-slate-800 hover:border-purple-500/40 text-slate-200 text-xs font-semibold rounded-xl transition shadow-sm"
-          >
-            <Activity className="w-4 h-4 text-purple-400" />
-            Inject Patient Decompensation
-          </button>
-        </div>
+        <button
+          onClick={handleInjectDecomp}
+          className="flex items-center justify-center gap-1.5 px-3 py-2 bg-slate-800/80 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-xl text-xs font-medium transition sm:col-span-2 lg:col-span-4"
+        >
+          <Activity className="w-3.5 h-3.5 text-red-400" />
+          Inject Patient Decompensation
+        </button>
       </div>
     </div>
   );

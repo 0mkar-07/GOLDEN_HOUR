@@ -32,10 +32,12 @@ import {
   RoadGraphDto,
   SharedRouteDto,
   CareObjective,
+  EmergencyPriorityTicketDto,
 } from '@goldenhour/contracts';
 import { apiClient } from '../lib/api-client';
 import { DeteriorationDiversionDialog } from '../components/DeteriorationDiversionDialog';
 import { useAuth } from '../context/AuthContext';
+import { useHospitalDirectory } from '../hooks/useHospitalDirectory';
 import { subscribeToRealtimeEvent } from '../lib/socket';
 import { MapPanel } from '../components/MapPanel';
 import { RecommendationPanel } from '../components/RecommendationPanel';
@@ -121,6 +123,7 @@ export const AmbulancePage: React.FC = () => {
   const [dispatching, setDispatching] = useState<boolean>(false);
   const [diverting, setDiverting] = useState<boolean>(false);
   const [showDeteriorationModal, setShowDeteriorationModal] = useState<boolean>(false);
+  const [priorityTicket, setPriorityTicket] = useState<EmergencyPriorityTicketDto | null>(null);
 
   // Road Graph & Telemetry State
   const [roadGraph, setRoadGraph] = useState<RoadGraphDto | null>(null);
@@ -128,8 +131,8 @@ export const AmbulancePage: React.FC = () => {
     ambulanceId: 'amb-104',
     x: 120,
     y: 150,
-    lat: 40.71,
-    lng: -74.02,
+    lat: 13.0110,
+    lng: 74.7943,
     speed: 0,
     heading: 85,
     source: 'SIMULATED',
@@ -138,7 +141,7 @@ export const AmbulancePage: React.FC = () => {
     observedAt: new Date().toISOString(),
   });
   const [trafficOverrides, setTrafficOverrides] = useState<Record<string, number>>({});
-  const [hospitals, setHospitals] = useState<HospitalDto[]>([]);
+  const { hospitals, loading: hospitalsLoading, error: hospitalsError, reload: reloadHospitals } = useHospitalDirectory();
   const [selectedHospitalId, setSelectedHospitalId] = useState<string | null>(null);
 
   // Browser GPS Streaming State
@@ -229,6 +232,13 @@ export const AmbulancePage: React.FC = () => {
             } catch {
               // Standby
             }
+
+            try {
+              const ticketRes = await apiClient.getCasePriorityReview(latest.id);
+              setPriorityTicket(ticketRes?.ticket || null);
+            } catch {
+              setPriorityTicket(null);
+            }
           }
         }
       }
@@ -237,17 +247,13 @@ export const AmbulancePage: React.FC = () => {
     }
   }, [loadRoutes]);
 
-  // Load Road Graph & Hospitals
-  const loadMapAndHospitals = useCallback(async () => {
+  // Load Road Graph independently from hospital directory
+  const loadRoadGraph = useCallback(async () => {
     try {
-      const [graphRes, hospRes] = await Promise.all([
-        apiClient.getRoadGraph(),
-        apiClient.listHospitals(),
-      ]);
+      const graphRes = await apiClient.getRoadGraph();
       setRoadGraph(graphRes.graph);
       setTrafficOverrides(graphRes.trafficOverrides || {});
       setAmbulancePosition(graphRes.ambulancePosition);
-      setHospitals(hospRes.hospitals);
 
       // Load preview routes immediately so live map renders routes before case submission
       try {
@@ -259,14 +265,14 @@ export const AmbulancePage: React.FC = () => {
         console.warn('Preview routes standby:', e);
       }
     } catch (err: any) {
-      console.error('Failed to load graph/hospitals:', err);
+      console.error('Failed to load road graph:', err);
     }
   }, []);
 
   useEffect(() => {
     loadActiveCase();
-    loadMapAndHospitals();
-  }, [loadActiveCase, loadMapAndHospitals]);
+    loadRoadGraph();
+  }, [loadActiveCase, loadRoadGraph]);
 
   // Real-Time Socket.IO Subscriptions
   useEffect(() => {
@@ -287,10 +293,17 @@ export const AmbulancePage: React.FC = () => {
       }
     });
 
+    const unsubTicket = subscribeToRealtimeEvent('priority_ticket.updated', (event: any) => {
+      if (activeCase && (event.payload?.caseId === activeCase.id || event.entityId === activeCase.id)) {
+        setPriorityTicket(event.payload || null);
+      }
+    });
+
     return () => {
       unsubPos();
       unsubDest();
       unsubCase();
+      unsubTicket();
       if (gpsWatchIdRef.current !== null) {
         navigator.geolocation.clearWatch(gpsWatchIdRef.current);
       }
@@ -421,6 +434,28 @@ export const AmbulancePage: React.FC = () => {
       setError(err?.message || 'Failed to divert case');
     } finally {
       setDiverting(false);
+    }
+  };
+
+  // Request Emergency Priority Review (Stage 4)
+  const handleRequestPriorityReview = async (hospitalId: string) => {
+    if (!activeCase) {
+      setError('Please submit and confirm clinical assessment before requesting emergency priority review.');
+      return;
+    }
+    try {
+      const res = await apiClient.createPriorityReview(activeCase.id, {
+        caseId: activeCase.id,
+        hospitalId,
+        estimatedArrivalSeconds: 720,
+        urgencyLevel,
+        clinicalRationale: `Critical inbound emergency (${presentingIssue}). Immediate trauma resuscitation & OR suite requested.`,
+      });
+      setPriorityTicket(res.ticket);
+      setSuccessMsg('Emergency priority review request dispatched to hospital surgical director.');
+      setTimeout(() => setSuccessMsg(null), 4000);
+    } catch (err: any) {
+      setError(err?.message || 'Failed to submit emergency priority review');
     }
   };
 
@@ -990,6 +1025,8 @@ export const AmbulancePage: React.FC = () => {
         dispatching={dispatching}
         onDivert={handleDivert}
         diverting={diverting}
+        priorityTicket={priorityTicket}
+        onRequestPriorityReview={handleRequestPriorityReview}
       />
 
       {/* Patient In-Transit Deterioration Diversion Dialog */}

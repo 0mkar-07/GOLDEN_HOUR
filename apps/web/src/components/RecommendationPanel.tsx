@@ -4,6 +4,7 @@ import {
   CandidateEvaluationDto,
   DestinationReadiness,
   DestinationDto,
+  EmergencyPriorityTicketDto,
 } from '@goldenhour/contracts';
 import {
   MapPin,
@@ -32,6 +33,8 @@ interface RecommendationPanelProps {
   dispatching?: boolean;
   onDivert?: (hospitalId: string) => void;
   diverting?: boolean;
+  priorityTicket?: EmergencyPriorityTicketDto | null;
+  onRequestPriorityReview?: (hospitalId: string) => void;
 }
 
 export const RecommendationPanel: React.FC<RecommendationPanelProps> = ({
@@ -44,6 +47,8 @@ export const RecommendationPanel: React.FC<RecommendationPanelProps> = ({
   dispatching = false,
   onDivert,
   diverting = false,
+  priorityTicket = null,
+  onRequestPriorityReview,
 }) => {
   if (!recommendation) {
     return (
@@ -105,6 +110,69 @@ export const RecommendationPanel: React.FC<RecommendationPanelProps> = ({
               {recommendation.coordinatorBriefing}
             </p>
           </div>
+        </div>
+      )}
+
+      {/* Emergency-Priority Review Banner (Stages 3 & 4) */}
+      {priorityTicket && (
+        <div
+          className={`p-3.5 rounded-xl border flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs ${
+            priorityTicket.status === 'PENDING_REVIEW'
+              ? 'bg-[#FFF8E6] border-[#FEEFC7] text-[#8A5800]'
+              : priorityTicket.status === 'APPROVED'
+              ? 'bg-[#EAF5F2] border-[#DCE5E3] text-[#176B68]'
+              : 'bg-red-50 border-red-200 text-[#B42318]'
+          }`}
+        >
+          <div className="flex items-start gap-2.5">
+            {priorityTicket.status === 'PENDING_REVIEW' ? (
+              <Clock className="w-4 h-4 shrink-0 text-[#B54708] animate-spin mt-0.5" />
+            ) : priorityTicket.status === 'APPROVED' ? (
+              <CheckCircle2 className="w-4 h-4 shrink-0 text-[#176B68] mt-0.5" />
+            ) : (
+              <XCircle className="w-4 h-4 shrink-0 text-[#B42318] mt-0.5" />
+            )}
+            <div>
+              <span className="font-bold block">
+                {priorityTicket.status === 'PENDING_REVIEW'
+                  ? 'Availability pending hospital review'
+                  : priorityTicket.status === 'APPROVED'
+                  ? 'Emergency Priority Confirmed'
+                  : 'Elective Deferral Declined'}
+              </span>
+              <span className="text-[11px] opacity-90">
+                {priorityTicket.status === 'PENDING_REVIEW'
+                  ? `Review ticket submitted to defer conflicting elective case (${priorityTicket.conflictingProcedureName}). Waiting for hospital surgical director.`
+                  : priorityTicket.status === 'APPROVED'
+                  ? `Hospital surgical director approved deferral. Operating theatre reserved for inbound emergency.`
+                  : `Hospital was unable to defer scheduled procedure: ${priorityTicket.reviewerNotes || 'Capacity locked'}`}
+              </span>
+            </div>
+          </div>
+
+          <span className="shrink-0 text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-white border border-current shadow-xs">
+            {priorityTicket.status}
+          </span>
+        </div>
+      )}
+
+      {/* Trigger button for Emergency-Priority Deferral if no ticket pending */}
+      {!priorityTicket && onRequestPriorityReview && (hospitalA || recommendation.priorityCandidates?.[0]) && (
+        <div className="p-3 bg-[#F6F8F8] border border-[#DCE5E3] rounded-xl flex items-center justify-between gap-3 text-xs">
+          <div className="flex items-center gap-2 text-[#596B69]">
+            <Clock className="w-4 h-4 text-[#176B68]" />
+            <span>Schedule Conflict? Request hospital review to defer unstarted elective cases for incoming trauma.</span>
+          </div>
+          <button
+            onClick={() =>
+              onRequestPriorityReview(
+                hospitalA?.hospitalId || recommendation.priorityCandidates?.[0]?.hospitalId || 'hosp-001'
+              )
+            }
+            className="px-3 py-1.5 bg-[#174C49] hover:bg-[#093D39] text-white font-semibold rounded-lg shadow-xs transition text-xs shrink-0"
+          >
+            Request Emergency Priority Review
+          </button>
         </div>
       )}
 

@@ -31,16 +31,20 @@ import {
   RequestRole,
   RequestStatus,
   UserRole,
+  OperatingTheatreDto,
+  ScheduledProcedureDto,
+  EmergencyPriorityTicketDto,
 } from '@goldenhour/contracts';
 import { apiClient, ApiError } from '../lib/api-client';
 import { useAuth } from '../context/AuthContext';
+import { useHospitalDirectory } from '../hooks/useHospitalDirectory';
 import { subscribeToRealtimeEvent } from '../lib/socket';
 
 export const HospitalPage: React.FC = () => {
   const { user } = useAuth();
+  const { hospitals, loading: hospitalsLoading, error: hospitalsError, reload: reloadHospitals } = useHospitalDirectory();
 
   // State
-  const [hospitals, setHospitals] = useState<HospitalDto[]>([]);
   const [selectedHospitalId, setSelectedHospitalId] = useState<string>('hosp-001');
   const [currentHospital, setCurrentHospital] = useState<HospitalDto | null>(null);
   const [resourcePools, setResourcePools] = useState<ResourcePoolDto[]>([]);
@@ -50,6 +54,15 @@ export const HospitalPage: React.FC = () => {
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
+
+  // Scheduling & Operating Theatre State
+  const [theatres, setTheatres] = useState<OperatingTheatreDto[]>([]);
+  const [procedures, setProcedures] = useState<ScheduledProcedureDto[]>([]);
+  const [priorityTickets, setPriorityTickets] = useState<EmergencyPriorityTicketDto[]>([]);
+  const [reviewerNotes, setReviewerNotes] = useState<string>(
+    'Approved elective deferral: OR-1 prioritized for critical inbound emergency trauma'
+  );
+  const [decisionProcessing, setDecisionProcessing] = useState<boolean>(false);
 
   // Edit Modal State for Resource Pool
   const [editingPool, setEditingPool] = useState<ResourcePoolDto | null>(null);
@@ -66,16 +79,6 @@ export const HospitalPage: React.FC = () => {
     }
   }, [user]);
 
-  // Load all hospitals
-  const loadHospitals = useCallback(async () => {
-    try {
-      const res = await apiClient.listHospitals();
-      setHospitals(res.hospitals);
-    } catch (err: any) {
-      console.error('Failed to fetch hospitals list:', err);
-    }
-  }, []);
-
   // Load data for selected hospital
   const loadHospitalData = useCallback(async (hospId: string) => {
     setLoading(true);
@@ -91,17 +94,26 @@ export const HospitalPage: React.FC = () => {
       setResourcePools(poolsRes.resourcePools || []);
       setStaffList(staffRes.staffAvailability || []);
 
-      // Active requests and allocations
+      // Active requests, allocations, and operating theatre schedules
       try {
-        const [reqsRes, allocsRes] = await Promise.all([
+        const [reqsRes, allocsRes, theatresRes, procsRes, ticketsRes] = await Promise.all([
           apiClient.listHospitalRequests(hospId),
           apiClient.listHospitalAllocations(hospId),
+          apiClient.getHospitalTheatres(hospId),
+          apiClient.getHospitalProcedures(hospId),
+          apiClient.getHospitalPriorityTickets(hospId),
         ]);
         setRequests(reqsRes?.requests || []);
         setAllocations(allocsRes?.allocations || []);
+        setTheatres(theatresRes?.theatres || []);
+        setProcedures(procsRes?.procedures || []);
+        setPriorityTickets(ticketsRes?.tickets || []);
       } catch {
         setRequests([]);
         setAllocations([]);
+        setTheatres([]);
+        setProcedures([]);
+        setPriorityTickets([]);
       }
     } catch (err: any) {
       setError(err?.message || 'Failed to load hospital state');
@@ -109,10 +121,6 @@ export const HospitalPage: React.FC = () => {
       setLoading(false);
     }
   }, []);
-
-  useEffect(() => {
-    loadHospitals();
-  }, [loadHospitals]);
 
   useEffect(() => {
     if (selectedHospitalId) {
@@ -259,6 +267,46 @@ export const HospitalPage: React.FC = () => {
       loadHospitalData(selectedHospitalId);
     } catch (err: any) {
       setError(err?.message || 'Failed to release allocation');
+    }
+  };
+
+  // Handle Decision on Emergency Priority Review Ticket
+  const handleTicketDecision = async (
+    ticketId: string,
+    decision: 'APPROVED' | 'DECLINED' | 'ALTERNATIVE_RESOURCE',
+    alternateTheatreId?: string
+  ) => {
+    try {
+      setDecisionProcessing(true);
+      setActionSuccess(null);
+      setError(null);
+      const res = await apiClient.decidePriorityTicket(ticketId, {
+        decision,
+        reviewerNotes,
+        alternateTheatreId,
+      });
+
+      setPriorityTickets((prev) => prev.map((t) => (t.id === ticketId ? res.ticket : t)));
+
+      if (res.deferredProcedure) {
+        setProcedures((prev) =>
+          prev.map((p) => (p.id === res.deferredProcedure!.id ? res.deferredProcedure! : p))
+        );
+      }
+
+      const msg =
+        decision === 'APPROVED'
+          ? 'Emergency priority APPROVED: Elective procedure deferred. OR Suite prioritized for inbound trauma.'
+          : decision === 'ALTERNATIVE_RESOURCE'
+          ? 'Emergency priority APPROVED with alternate theatre assignment.'
+          : 'Emergency priority deferral DECLINED.';
+      setActionSuccess(msg);
+      setTimeout(() => setActionSuccess(null), 4500);
+      loadHospitalData(selectedHospitalId);
+    } catch (err: any) {
+      setError(err?.message || 'Failed to process priority ticket decision');
+    } finally {
+      setDecisionProcessing(false);
     }
   };
 
@@ -485,6 +533,180 @@ export const HospitalPage: React.FC = () => {
             </div>
           </div>
         )}
+      </div>
+
+      {/* Operating Theatres & Emergency Priority Scheduling Review (Stages 3 & 4) */}
+      <div className="bg-white border border-[#DCE5E3] rounded-2xl p-5 space-y-4 shadow-xs">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-[#DCE5E3] pb-3 gap-2">
+          <div className="flex items-center gap-2">
+            <Clock className="w-5 h-5 text-[#176B68]" />
+            <h2 className="text-base font-bold text-[#172B2A]">
+              Operating Theatres & Surgical Schedule (Asia/Kolkata)
+            </h2>
+          </div>
+          <span className="text-xs px-2.5 py-0.5 rounded-full font-semibold bg-[#EAF5F2] text-[#176B68] border border-[#DCE5E3]">
+            24/7 Emergency & Trauma Coverage Active
+          </span>
+        </div>
+
+        {/* Priority Review Tickets Banner */}
+        {priorityTickets.filter((t) => t.status === 'PENDING_REVIEW').length > 0 && (
+          <div className="space-y-3">
+            {priorityTickets
+              .filter((t) => t.status === 'PENDING_REVIEW')
+              .map((ticket) => (
+                <div
+                  key={ticket.id}
+                  className="p-4 bg-[#FFF8E6] border border-[#FEEFC7] rounded-xl space-y-3"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-center gap-2 text-[#B54708]">
+                      <AlertTriangle className="w-5 h-5 shrink-0" />
+                      <span className="text-xs font-bold uppercase tracking-wider">
+                        Emergency Priority Review Required • Inbound Trauma
+                      </span>
+                    </div>
+                    <span className="text-[11px] font-mono font-semibold px-2 py-0.5 rounded bg-white text-[#B54708] border border-[#FEEFC7]">
+                      ETA Window: {Math.round(ticket.emergencyArrivalWindow.estimatedSeconds / 60)} min
+                    </span>
+                  </div>
+
+                  <p className="text-xs text-[#8A5800] leading-relaxed">
+                    {ticket.clinicalRationale}
+                  </p>
+
+                  <div className="bg-white/80 border border-[#FEEFC7] rounded-lg p-2.5 text-xs space-y-1">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[#596B69]">Conflicting Scheduled Case:</span>
+                      <span className="font-semibold text-[#172B2A]">
+                        {ticket.conflictingProcedureName} ({ticket.caseType})
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-[#596B69]">Target Theatre:</span>
+                      <span className="font-mono font-semibold text-[#176B68]">
+                        {theatres.find((t) => t.id === ticket.targetTheatreId)?.name || ticket.targetTheatreId}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] font-semibold text-[#8A5800]">
+                      Reviewer Decision Rationale / Notes:
+                    </label>
+                    <input
+                      type="text"
+                      value={reviewerNotes}
+                      onChange={(e) => setReviewerNotes(e.target.value)}
+                      placeholder="Enter clinical rationale for scheduling decision..."
+                      className="w-full text-xs px-3 py-2 bg-white border border-[#DCE5E3] rounded-lg text-[#172B2A] focus:outline-none focus:ring-1 focus:ring-[#176B68]"
+                    />
+                  </div>
+
+                  <div className="flex items-center gap-2 pt-1 flex-wrap">
+                    <button
+                      onClick={() => handleTicketDecision(ticket.id, 'APPROVED')}
+                      disabled={decisionProcessing}
+                      className="flex items-center gap-1.5 px-3.5 py-2 bg-[#174C49] hover:bg-[#093D39] text-white text-xs font-bold rounded-lg shadow-xs transition"
+                    >
+                      <CheckCircle2 className="w-4 h-4" />
+                      Approve Elective Deferral (Prioritize Emergency)
+                    </button>
+                    <button
+                      onClick={() => handleTicketDecision(ticket.id, 'ALTERNATIVE_RESOURCE', 'ot-001-2')}
+                      disabled={decisionProcessing}
+                      className="flex items-center gap-1.5 px-3 py-2 bg-white hover:bg-[#F6F8F8] text-[#176B68] border border-[#176B68] text-xs font-semibold rounded-lg shadow-xs transition"
+                    >
+                      Propose Alternate Room (OR-2)
+                    </button>
+                    <button
+                      onClick={() => handleTicketDecision(ticket.id, 'DECLINED')}
+                      disabled={decisionProcessing}
+                      className="px-3 py-2 bg-white hover:bg-red-50 text-[#B42318] border border-[#FDA29B] text-xs font-semibold rounded-lg transition"
+                    >
+                      Decline Deferral
+                    </button>
+                  </div>
+                </div>
+              ))}
+          </div>
+        )}
+
+        {/* Operating Theatre Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+          {theatres.map((theatre) => {
+            const theatreProcs = procedures.filter((p) => p.theatreId === theatre.id);
+            const activeOrUpcoming = theatreProcs[0];
+
+            return (
+              <div
+                key={theatre.id}
+                className="p-3.5 bg-[#F6F8F8] border border-[#DCE5E3] rounded-xl space-y-2.5 flex flex-col justify-between"
+              >
+                <div>
+                  <div className="flex items-center justify-between gap-2">
+                    <h3 className="text-xs font-bold text-[#172B2A]">{theatre.name}</h3>
+                    <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">
+                      Active
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap gap-1 mt-1">
+                    {theatre.capabilities.map((cap) => (
+                      <span
+                        key={cap}
+                        className="text-[9px] px-1 py-0.2 rounded bg-white text-[#596B69] border border-[#DCE5E3]"
+                      >
+                        {cap}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+
+                {activeOrUpcoming ? (
+                  <div className="bg-white border border-[#DCE5E3] rounded-lg p-2.5 space-y-1.5 text-xs">
+                    <div className="flex items-center justify-between">
+                      <span className="font-semibold text-[#172B2A] line-clamp-1">
+                        {activeOrUpcoming.procedureName}
+                      </span>
+                      <span
+                        className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                          activeOrUpcoming.caseType === 'ELECTIVE'
+                            ? 'bg-amber-50 text-amber-700 border border-amber-200'
+                            : 'bg-red-50 text-red-700 border border-red-200'
+                        }`}
+                      >
+                        {activeOrUpcoming.caseType}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center justify-between text-[11px] text-[#596B69]">
+                      <span>Status:</span>
+                      <span
+                        className={`font-semibold ${
+                          activeOrUpcoming.status === 'DEFERRED'
+                            ? 'text-orange-600 line-through'
+                            : activeOrUpcoming.status === 'IN_PROGRESS'
+                            ? 'text-emerald-600 animate-pulse'
+                            : 'text-[#172B2A]'
+                        }`}
+                      >
+                        {activeOrUpcoming.status}
+                      </span>
+                    </div>
+
+                    <div className="text-[10px] text-[#596B69] border-t border-[#F6F8F8] pt-1">
+                      {activeOrUpcoming.clinicianInCharge}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="bg-white/60 border border-dashed border-[#DCE5E3] rounded-lg p-3 text-center text-xs text-[#596B69]">
+                    Room Ready & Available for Emergency Intake
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
       </div>
 
       {/* 1. Incoming Case Requests Banner (Placed Prominently Before Inventory) */}

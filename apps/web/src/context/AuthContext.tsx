@@ -32,8 +32,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setUser(res.user);
       setError(null);
     } catch {
-      // Not logged in yet
-      setUser(null);
+      // If not authenticated in demo environment, auto-login default paramedic demo user
+      try {
+        const loginRes = await apiClient.login({
+          email: DEMO_CREDENTIALS.paramedic.email,
+          password: DEMO_CREDENTIALS.paramedic.password,
+        });
+        setUser(loginRes.user);
+        setError(null);
+      } catch {
+        setUser(null);
+      }
     } finally {
       setLoading(false);
     }

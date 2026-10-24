@@ -74,9 +74,9 @@ export const LiveMap: React.FC<LiveMapProps> = ({
   const [isDragging, setIsDragging] = useState<boolean>(false);
   const [dragStart, setDragStart] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
 
-  // Safe coordinates
-  const ambLat = ambulancePosition?.lat ?? 40.7128;
-  const ambLng = ambulancePosition?.lng ?? -74.0060;
+  // Safe coordinates (NITK Surathkal region default)
+  const ambLat = ambulancePosition?.lat ?? 13.0110;
+  const ambLng = ambulancePosition?.lng ?? 74.7943;
   const ambHeading = ambulancePosition?.heading ?? 85;
   const ambSpeed = ambulancePosition?.speed ?? 0;
 
@@ -309,7 +309,7 @@ export const LiveMap: React.FC<LiveMapProps> = ({
     const bounds = new (window as any).google.maps.LatLngBounds();
     bounds.extend({ lat: ambLat, lng: ambLng });
     hospitals.forEach((h) => {
-      bounds.extend({ lat: h.location?.lat ?? 40.7128, lng: h.location?.lng ?? -74.006 });
+      bounds.extend({ lat: h.location?.lat ?? 13.0110, lng: h.location?.lng ?? 74.7943 });
     });
     googleMapInstance.current.fitBounds(bounds, 50);
   };
@@ -318,8 +318,8 @@ export const LiveMap: React.FC<LiveMapProps> = ({
   const geoBounds = useMemo(() => {
     let minLat = ambLat, maxLat = ambLat, minLng = ambLng, maxLng = ambLng;
     for (const h of hospitals) {
-      const hLat = h.location?.lat ?? 40.7128;
-      const hLng = h.location?.lng ?? -74.0060;
+      const hLat = h.location?.lat ?? 13.0110;
+      const hLng = h.location?.lng ?? 74.7943;
       minLat = Math.min(minLat, hLat);
       maxLat = Math.max(maxLat, hLat);
       minLng = Math.min(minLng, hLng);
@@ -524,8 +524,8 @@ export const LiveMap: React.FC<LiveMapProps> = ({
 
             {/* Hospital Markers */}
             {hospitals.map((hosp) => {
-              const hLat = hosp.location?.lat ?? 40.7128;
-              const hLng = hosp.location?.lng ?? -74.0060;
+              const hLat = hosp.location?.lat ?? 13.0110;
+              const hLng = hosp.location?.lng ?? 74.7943;
               const pos = project(hLat, hLng);
               const isA = hosp.id === recommendation?.hospitalA?.hospitalId;
               const isB = hosp.id === recommendation?.hospitalB?.hospitalId;

@@ -9,3 +9,4 @@ export * from './audit.js';
 export * from './simulation.js';
 export * from './admin.js';
 export * from './routing.js';
+export * from './scheduling.js';

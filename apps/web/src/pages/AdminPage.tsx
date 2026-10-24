@@ -244,8 +244,8 @@ export const AdminPage: React.FC = () => {
   const ambulancePos = overview?.ambulanceTelemetry?.position || {
     x: 120,
     y: 150,
-    lat: 40.71,
-    lng: -74.02,
+    lat: 13.0110,
+    lng: 74.7943,
   };
 
   return (
@@ -521,8 +521,8 @@ export const AdminPage: React.FC = () => {
                 ambulanceId: 'amb-104',
                 x: ambulancePos.x || 120,
                 y: ambulancePos.y || 150,
-                lat: ambulancePos.lat || 40.71,
-                lng: ambulancePos.lng || -74.02,
+                lat: ambulancePos.lat || 13.0110,
+                lng: ambulancePos.lng || 74.7943,
                 speed: overview?.ambulanceTelemetry?.speed || 0,
                 heading: overview?.ambulanceTelemetry?.heading || 85,
                 source: 'SIMULATED',

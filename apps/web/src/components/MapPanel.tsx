@@ -12,11 +12,11 @@ import { Map, Layers, Radio } from 'lucide-react';
 
 const DEFAULT_FALLBACK_GRAPH: RoadGraphDto = {
   nodes: [
-    { id: 'node-amb-start', label: 'Highway Incident', x: 120, y: 150, lat: 40.71, lng: -74.02 },
-    { id: 'node-jct-1', label: 'Westside Expressway', x: 200, y: 160, lat: 40.711, lng: -74.012 },
-    { id: 'node-jct-2', label: 'Central Midtown', x: 300, y: 160, lat: 40.713, lng: -74.005 },
-    { id: 'node-hosp-a', label: 'St. Jude Trauma Bay', x: 350, y: 150, lat: 40.7128, lng: -74.006 },
-    { id: 'node-hosp-b', label: 'Bayview Slip', x: 150, y: 220, lat: 40.7088, lng: -74.015 },
+    { id: 'node-amb-start', label: 'NITK Incident Scene', x: 120, y: 150, lat: 13.0110, lng: 74.7943 },
+    { id: 'node-jct-1', label: 'Surathkal Light House', x: 150, y: 180, lat: 13.0080, lng: 74.7950 },
+    { id: 'node-jct-2', label: 'Surathkal Crossroads', x: 160, y: 210, lat: 13.0040, lng: 74.7960 },
+    { id: 'node-hosp-a', label: 'A.J. Hospital Trauma Bay', x: 380, y: 390, lat: 12.8988, lng: 74.8512 },
+    { id: 'node-hosp-b', label: 'Padmavathi Hospital Bay', x: 160, y: 220, lat: 13.0042, lng: 74.7965 },
   ],
   edges: [
     { id: 'edge-1', from: 'node-amb-start', to: 'node-jct-1', distanceMeters: 1000, speedKmh: 50, baseTravelSeconds: 72, trafficMultiplier: 1.0 },

@@ -118,7 +118,7 @@ describe('Phase 9 — Admin Management and Monitoring', () => {
     expect(body.hospitalReadiness.length).toBe(5);
     const stJude = body.hospitalReadiness.find((h: any) => h.id === 'hosp-001');
     expect(stJude).toBeDefined();
-    expect(stJude.name).toBe('St. Jude Metropolitan Trauma Center');
+    expect(stJude.name).toContain('St. Jude');
     expect(stJude.totalResources).toBeGreaterThan(0);
     expect(stJude.availableCount).toBeGreaterThan(0);
 

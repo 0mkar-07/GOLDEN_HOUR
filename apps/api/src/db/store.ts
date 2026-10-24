@@ -27,6 +27,12 @@ import {
   AdminHospitalUpdateDto,
   ReceivingStatus,
   CareObjective,
+  OperatingTheatreDto,
+  ScheduledProcedureDto,
+  ServiceHoursDto,
+  EmergencyPriorityTicketDto,
+  TicketStatus,
+  RequestedAction,
 } from '@goldenhour/contracts';
 import {
   SEEDED_HOSPITALS,
@@ -56,6 +62,10 @@ class GoldenHourDatabaseStore {
   public destinations: Map<string, DestinationDto> = new Map();
   public hospitalRequests: Map<string, HospitalRequestDto> = new Map();
   public recommendations: Map<string, RecommendationDto> = new Map();
+  public operatingTheatres: Map<string, OperatingTheatreDto> = new Map();
+  public scheduledProcedures: Map<string, ScheduledProcedureDto> = new Map();
+  public serviceHours: Map<string, ServiceHoursDto[]> = new Map();
+  public emergencyPriorityTickets: Map<string, EmergencyPriorityTicketDto> = new Map();
   public trafficOverrides: Record<string, number> = {};
   public ambulancePosition: {
     ambulanceId: string;
@@ -77,8 +87,8 @@ class GoldenHourDatabaseStore {
     ambulanceId: 'amb-104',
     x: 120,
     y: 150,
-    lat: 40.71,
-    lng: -74.02,
+    lat: 13.0110,
+    lng: 74.7943,
     speed: 0,
     speedMps: 0,
     heading: 85,
@@ -155,6 +165,129 @@ class GoldenHourDatabaseStore {
           passwordHash,
         };
         this.users.set(u.id, userRecord);
+      }
+    }
+
+    // 5. Seed Operating Theatres
+    if (this.operatingTheatres.size === 0) {
+      const theatres: OperatingTheatreDto[] = [
+        {
+          id: 'ot-001-1',
+          hospitalId: 'hosp-001',
+          name: 'OR-1 Major Trauma & Neurosurgery Suite',
+          capabilities: ['TRAUMA_L1', 'NEUROSURGERY', 'ICU'],
+          active: true,
+        },
+        {
+          id: 'ot-001-2',
+          hospitalId: 'hosp-001',
+          name: 'OR-2 General Emergency & Laparoscopic Theatre',
+          capabilities: ['STABILIZATION', 'EMERGENCY_DEPT'],
+          active: true,
+        },
+        {
+          id: 'ot-001-3',
+          hospitalId: 'hosp-001',
+          name: 'OR-3 Cardiac Cath & Vascular Intervention Suite',
+          capabilities: ['CARDIAC_CATH', 'ICU'],
+          active: true,
+        },
+        {
+          id: 'ot-002-1',
+          hospitalId: 'hosp-002',
+          name: 'Surathkal Resuscitation & Urgent Surgical Room',
+          capabilities: ['STABILIZATION', 'EMERGENCY_DEPT'],
+          active: true,
+        },
+        {
+          id: 'ot-003-1',
+          hospitalId: 'hosp-003',
+          name: 'Mukka Multi-Specialty Surgical Theatre',
+          capabilities: ['STABILIZATION', 'VENTILATORS', 'ICU'],
+          active: true,
+        },
+      ];
+      for (const ot of theatres) {
+        this.operatingTheatres.set(ot.id, ot);
+      }
+    }
+
+    // 6. Seed Service Hours (24x7 Emergency/OT for all facilities)
+    if (this.serviceHours.size === 0) {
+      for (const hosp of SEEDED_HOSPITALS) {
+        this.serviceHours.set(hosp.id, [
+          {
+            hospitalId: hosp.id,
+            serviceType: 'EMERGENCY_DEPT',
+            is24x7: true,
+            timezone: 'Asia/Kolkata',
+          },
+          {
+            hospitalId: hosp.id,
+            serviceType: 'OPERATING_THEATRE',
+            is24x7: true,
+            timezone: 'Asia/Kolkata',
+          },
+          {
+            hospitalId: hosp.id,
+            serviceType: 'ICU',
+            is24x7: true,
+            timezone: 'Asia/Kolkata',
+          },
+        ]);
+      }
+    }
+
+    // 7. Seed Scheduled Procedures with realistic elective and in-progress cases
+    if (this.scheduledProcedures.size === 0) {
+      const now = Date.now();
+      const procedures: ScheduledProcedureDto[] = [
+        {
+          id: 'proc-101',
+          hospitalId: 'hosp-001',
+          theatreId: 'ot-001-1',
+          caseType: 'ELECTIVE',
+          procedureName: 'Elective Laparoscopic Inguinal Hernia Repair',
+          status: 'SCHEDULED',
+          plannedStart: new Date(now + 15 * 60 * 1000).toISOString(),
+          plannedEnd: new Date(now + 75 * 60 * 1000).toISOString(),
+          turnoverMinutes: 20,
+          deferralEligibility: 'ELIGIBLE_FOR_REVIEW',
+          clinicianInCharge: 'Dr. Ramesh Shenoy (General Surgery)',
+          version: 1,
+        },
+        {
+          id: 'proc-102',
+          hospitalId: 'hosp-001',
+          theatreId: 'ot-001-2',
+          caseType: 'URGENT',
+          procedureName: 'Acute Appendectomy with Peritonitis',
+          status: 'IN_PROGRESS',
+          plannedStart: new Date(now - 40 * 60 * 1000).toISOString(),
+          plannedEnd: new Date(now + 20 * 60 * 1000).toISOString(),
+          actualStart: new Date(now - 38 * 60 * 1000).toISOString(),
+          turnoverMinutes: 20,
+          deferralEligibility: 'PROTECTED_IN_PROGRESS',
+          clinicianInCharge: 'Dr. Preethi Rao (Emergency Surgery)',
+          version: 1,
+        },
+        {
+          id: 'proc-103',
+          hospitalId: 'hosp-002',
+          theatreId: 'ot-002-1',
+          caseType: 'ELECTIVE',
+          procedureName: 'Minor Soft Tissue Excision',
+          status: 'SCHEDULED',
+          plannedStart: new Date(now + 30 * 60 * 1000).toISOString(),
+          plannedEnd: new Date(now + 60 * 60 * 1000).toISOString(),
+          turnoverMinutes: 15,
+          deferralEligibility: 'ELIGIBLE_FOR_REVIEW',
+          clinicianInCharge: 'Dr. Sandeep Kumar (Urgent Care)',
+          version: 1,
+        },
+      ];
+      for (const p of procedures) {
+        this.scheduledProcedures.set(p.id, p);
       }
     }
 
@@ -1536,8 +1669,8 @@ class GoldenHourDatabaseStore {
       ambulanceId: 'amb-104',
       x: 120,
       y: 150,
-      lat: 40.71,
-      lng: -74.02,
+      lat: 13.0110,
+      lng: 74.7943,
       speed: 0,
       speedMps: 0,
       heading: 85,
@@ -1560,6 +1693,138 @@ class GoldenHourDatabaseStore {
     });
 
     this.queueOutbox('simulation.reset', 'global', { timestamp: new Date().toISOString() });
+  }
+
+  // --- Operating Theatres & Procedure Scheduling ---
+  public listOperatingTheatres(hospitalId: string): OperatingTheatreDto[] {
+    return Array.from(this.operatingTheatres.values()).filter((ot) => ot.hospitalId === hospitalId);
+  }
+
+  public listScheduledProcedures(hospitalId: string): ScheduledProcedureDto[] {
+    return Array.from(this.scheduledProcedures.values()).filter((p) => p.hospitalId === hospitalId);
+  }
+
+  public getHospitalServices(hospitalId: string): ServiceHoursDto[] {
+    return this.serviceHours.get(hospitalId) || [];
+  }
+
+  public createPriorityReview(
+    caseId: string,
+    hospitalId: string,
+    estimatedArrivalSeconds: number,
+    urgencyLevel?: string,
+    clinicalRationale?: string
+  ): EmergencyPriorityTicketDto {
+    const now = Date.now();
+    const arrivalTime = new Date(now + estimatedArrivalSeconds * 1000);
+    const windowStart = new Date(arrivalTime.getTime() - 2 * 60 * 1000).toISOString();
+    const windowEnd = new Date(arrivalTime.getTime() + 10 * 60 * 1000).toISOString();
+
+    // Check for existing pending ticket for this case
+    for (const ticket of this.emergencyPriorityTickets.values()) {
+      if (ticket.caseId === caseId && ticket.status === 'PENDING_REVIEW') {
+        return ticket;
+      }
+    }
+
+    // Identify candidate conflicting elective procedure in hospital
+    const hospitalProcedures = this.listScheduledProcedures(hospitalId);
+    const conflictingProc =
+      hospitalProcedures.find(
+        (p) => p.caseType === 'ELECTIVE' && (p.status === 'SCHEDULED' || p.status === 'PREPARING')
+      ) || hospitalProcedures[0];
+
+    const ticketId = 'ticket-' + Math.random().toString(36).substring(2, 9);
+    const ticket: EmergencyPriorityTicketDto = {
+      id: ticketId,
+      caseId,
+      hospitalId,
+      targetTheatreId: conflictingProc ? conflictingProc.theatreId : 'ot-001-1',
+      conflictingProcedureId: conflictingProc ? conflictingProc.id : 'proc-101',
+      conflictingProcedureName: conflictingProc ? conflictingProc.procedureName : 'Elective Procedure',
+      caseType: conflictingProc ? conflictingProc.caseType : 'ELECTIVE',
+      emergencyArrivalWindow: {
+        start: windowStart,
+        end: windowEnd,
+        estimatedSeconds: estimatedArrivalSeconds,
+      },
+      status: 'PENDING_REVIEW',
+      requestedAction: 'REVIEW_ELECTIVE_DEFERRAL',
+      clinicalRationale:
+        clinicalRationale ||
+        `Incoming ${urgencyLevel || 'CRITICAL'} emergency ETA ${Math.round(
+          estimatedArrivalSeconds / 60
+        )}m requires immediate trauma resuscitation bay & OR suite. Requesting hospital review to defer planned elective case.`,
+      reviewerNotes: null,
+      reviewedBy: null,
+      reviewedAt: null,
+      createdAt: new Date().toISOString(),
+      version: 1,
+    };
+
+    this.emergencyPriorityTickets.set(ticket.id, ticket);
+    this.queueOutbox('priority_ticket.created', ticket.id, ticket);
+    return ticket;
+  }
+
+  public listHospitalPriorityTickets(hospitalId: string): EmergencyPriorityTicketDto[] {
+    return Array.from(this.emergencyPriorityTickets.values()).filter((t) => t.hospitalId === hospitalId);
+  }
+
+  public getCasePriorityReview(caseId: string): EmergencyPriorityTicketDto | null {
+    for (const ticket of this.emergencyPriorityTickets.values()) {
+      if (ticket.caseId === caseId) {
+        return ticket;
+      }
+    }
+    return null;
+  }
+
+  public decidePriorityTicket(
+    ticketId: string,
+    decision: 'APPROVED' | 'DECLINED' | 'ALTERNATIVE_RESOURCE',
+    reviewerNotes: string,
+    reviewerId?: string,
+    alternateTheatreId?: string
+  ): { ticket: EmergencyPriorityTicketDto; deferredProcedure?: ScheduledProcedureDto } {
+    const ticket = this.emergencyPriorityTickets.get(ticketId);
+    if (!ticket) {
+      throw new Error(`Priority ticket not found: ${ticketId}`);
+    }
+
+    if (ticket.status !== 'PENDING_REVIEW' && ticket.status !== 'ACKNOWLEDGED') {
+      throw new Error(`Priority ticket is already resolved (${ticket.status})`);
+    }
+
+    ticket.reviewedBy = reviewerId || 'Chief Medical Officer / Surgical Scheduler';
+    ticket.reviewedAt = new Date().toISOString();
+    ticket.reviewerNotes = reviewerNotes;
+    ticket.version += 1;
+
+    let deferredProc: ScheduledProcedureDto | undefined;
+
+    if (decision === 'APPROVED') {
+      ticket.status = 'APPROVED';
+      const proc = this.scheduledProcedures.get(ticket.conflictingProcedureId);
+      if (proc) {
+        if (proc.status === 'IN_PROGRESS' || proc.deferralEligibility === 'PROTECTED_IN_PROGRESS') {
+          throw new Error('Cannot defer procedure: already in progress or protected.');
+        }
+        proc.status = 'DEFERRED';
+        proc.version += 1;
+        deferredProc = proc;
+        this.queueOutbox('procedure.updated', proc.id, proc);
+      }
+    } else if (decision === 'ALTERNATIVE_RESOURCE') {
+      ticket.status = 'APPROVED';
+      ticket.targetTheatreId = alternateTheatreId || 'ot-001-2';
+      ticket.requestedAction = 'REVIEW_RESOURCE_ALTERNATIVE';
+    } else {
+      ticket.status = 'DECLINED';
+    }
+
+    this.queueOutbox('priority_ticket.updated', ticket.id, ticket);
+    return { ticket, deferredProcedure: deferredProc };
   }
 }
 

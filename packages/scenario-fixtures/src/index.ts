@@ -20,9 +20,9 @@ export const SEEDED_HOSPITALS: HospitalDto[] = [
   {
     id: 'hosp-001',
     code: 'HOSP-A',
-    name: 'St. Jude Metropolitan Trauma Center',
-    address: '100 Central Ave, Metro City',
-    location: { x: 350, y: 150, lat: 40.7128, lng: -74.006 },
+    name: 'A.J. Hospital & Research Centre (St. Jude Metro Trauma A)',
+    address: 'NH 66, Kuntikana, Mangaluru, Karnataka 575004',
+    location: { x: 380, y: 390, lat: 12.8988, lng: 74.8512 },
     capabilities: [
       'TRAUMA_L1',
       'NEUROSURGERY',
@@ -42,9 +42,9 @@ export const SEEDED_HOSPITALS: HospitalDto[] = [
   {
     id: 'hosp-002',
     code: 'HOSP-B',
-    name: 'Bayview Urgent Care & Community Hospital',
-    address: '45 Harbor Blvd, Metro City',
-    location: { x: 150, y: 220, lat: 40.7088, lng: -74.015 },
+    name: 'Padmavathi Community Hospital (Bayview Urgent B)',
+    address: 'NH 66 Overpass, Surathkal, Mangaluru, Karnataka 575014',
+    location: { x: 160, y: 220, lat: 13.0042, lng: 74.7965 },
     capabilities: [
       'STABILIZATION',
       'EMERGENCY_DEPT',
@@ -59,9 +59,9 @@ export const SEEDED_HOSPITALS: HospitalDto[] = [
   {
     id: 'hosp-003',
     code: 'HOSP-C',
-    name: 'Northpoint Regional Medical Center',
-    address: '880 Highland Way, Metro City',
-    location: { x: 420, y: 80, lat: 40.725, lng: -73.995 },
+    name: 'Srinivas Institute of Medical Sciences (Northpoint Regional C)',
+    address: 'NH 66, Mukka, Surathkal North, Karnataka 574146',
+    location: { x: 140, y: 80, lat: 13.0335, lng: 74.7865 },
     capabilities: [
       'STABILIZATION',
       'BASIC_OXYGEN',
@@ -78,9 +78,9 @@ export const SEEDED_HOSPITALS: HospitalDto[] = [
   {
     id: 'hosp-004',
     code: 'HOSP-D',
-    name: 'Eastside Heart & Vascular Institute',
-    address: '310 Riverdale Rd, Metro City',
-    location: { x: 480, y: 280, lat: 40.718, lng: -73.98 },
+    name: 'KMC Hospital & Heart Institute (Eastside Vascular D)',
+    address: 'B.R. Ambedkar Circle, Hampankatta, Mangaluru, Karnataka 575001',
+    location: { x: 430, y: 460, lat: 12.8705, lng: 74.8432 },
     capabilities: [
       'CARDIAC_CATH',
       'ICU',
@@ -97,9 +97,9 @@ export const SEEDED_HOSPITALS: HospitalDto[] = [
   {
     id: 'hosp-005',
     code: 'HOSP-E',
-    name: 'Valley Children & Pediatric Pavilion',
-    address: '500 Meadow Lane, Metro City',
-    location: { x: 90, y: 380, lat: 40.695, lng: -74.02 },
+    name: 'NITK Health Care Centre (Valley Children E)',
+    address: 'Main Campus, Srinivasnagar, Surathkal, Karnataka 575025',
+    location: { x: 130, y: 170, lat: 13.0075, lng: 74.7958 },
     capabilities: [
       'PEDIATRIC_ICU',
       'PEDIATRIC_TRAUMA',
@@ -316,16 +316,16 @@ export const SEEDED_STAFF_AVAILABILITY: StaffAvailabilityDto[] = [
  */
 export const SEEDED_ROAD_GRAPH: RoadGraphDto = {
   nodes: [
-    { id: 'node-amb-start', label: 'Highway Mile 4 Incident Scene', x: 120, y: 150, lat: 40.71, lng: -74.02 },
-    { id: 'node-jct-1', label: 'Westside Expressway Junction', x: 200, y: 160, lat: 40.711, lng: -74.012 },
-    { id: 'node-jct-2', label: 'Central Midtown Crossroads', x: 300, y: 160, lat: 40.713, lng: -74.005 },
-    { id: 'node-hosp-a', label: 'St. Jude Trauma Bay Access', x: 350, y: 150, lat: 40.7128, lng: -74.006 },
-    { id: 'node-hosp-b', label: 'Bayview Harbor Slip Access', x: 150, y: 220, lat: 40.7088, lng: -74.015 },
-    { id: 'node-jct-3', label: 'North Uptown Cloverleaf', x: 320, y: 90, lat: 40.722, lng: -74.0 },
-    { id: 'node-hosp-c', label: 'Northpoint Medical Way', x: 420, y: 80, lat: 40.725, lng: -73.995 },
-    { id: 'node-jct-4', label: 'Eastside River Connector', x: 400, y: 240, lat: 40.715, lng: -73.985 },
-    { id: 'node-hosp-d', label: 'Eastside Vascular Pavilion', x: 480, y: 280, lat: 40.718, lng: -73.98 },
-    { id: 'node-hosp-e', label: 'Valley Children Entrance', x: 90, y: 380, lat: 40.695, lng: -74.02 },
+    { id: 'node-amb-start', label: 'NITK Main Gate (NH 66 Incident Scene)', x: 120, y: 150, lat: 13.0110, lng: 74.7943 },
+    { id: 'node-jct-1', label: 'Surathkal Light House Junction', x: 150, y: 180, lat: 13.0080, lng: 74.7950 },
+    { id: 'node-jct-2', label: 'Surathkal NH 66 Overpass Crossroads', x: 160, y: 210, lat: 13.0040, lng: 74.7960 },
+    { id: 'node-hosp-a', label: 'A.J. Hospital Kuntikana Trauma Bay (St. Jude A)', x: 380, y: 390, lat: 12.8988, lng: 74.8512 },
+    { id: 'node-hosp-b', label: 'Padmavathi Hospital Emergency Bay (Bayview B)', x: 160, y: 220, lat: 13.0042, lng: 74.7965 },
+    { id: 'node-jct-3', label: 'Mukka NH 66 Cloverleaf', x: 140, y: 90, lat: 13.0300, lng: 74.7880 },
+    { id: 'node-hosp-c', label: 'Srinivas Hospital Mukka Ambulance Bay (Northpoint C)', x: 140, y: 80, lat: 13.0335, lng: 74.7865 },
+    { id: 'node-jct-4', label: 'Kulur Bridge NH 66 Connector', x: 300, y: 320, lat: 12.9250, lng: 74.8350 },
+    { id: 'node-hosp-d', label: 'KMC Ambedkar Circle Cardiac Entrance (Eastside D)', x: 430, y: 460, lat: 12.8705, lng: 74.8432 },
+    { id: 'node-hosp-e', label: 'NITK Health Care Centre Entrance (Valley Children E)', x: 130, y: 170, lat: 13.0075, lng: 74.7958 },
   ],
   edges: [
     // Ambulance start to Junction 1

@@ -28,6 +28,12 @@ import {
   DispatchCaseRequest,
   DiversionPreviewDto,
   CareObjective,
+  OperatingTheatreDto,
+  ScheduledProcedureDto,
+  ServiceHoursDto,
+  EmergencyPriorityTicketDto,
+  CreatePriorityReviewRequest,
+  DecidePriorityTicketRequest,
 } from '@goldenhour/contracts';
 
 export class ApiError extends Error {
@@ -487,5 +493,59 @@ export const apiClient = {
       method: 'POST',
       body: JSON.stringify(position),
     });
+  },
+
+  // Hospital Scheduling & Emergency Priority Review
+  async getHospitalServices(hospitalId: string): Promise<{ services: ServiceHoursDto[] }> {
+    return request<{ services: ServiceHoursDto[] }>(`/api/v1/hospitals/${hospitalId}/services`, {
+      method: 'GET',
+    });
+  },
+
+  async getHospitalTheatres(hospitalId: string): Promise<{ theatres: OperatingTheatreDto[] }> {
+    return request<{ theatres: OperatingTheatreDto[] }>(`/api/v1/hospitals/${hospitalId}/theatres`, {
+      method: 'GET',
+    });
+  },
+
+  async getHospitalProcedures(hospitalId: string): Promise<{ procedures: ScheduledProcedureDto[] }> {
+    return request<{ procedures: ScheduledProcedureDto[] }>(`/api/v1/hospitals/${hospitalId}/procedures`, {
+      method: 'GET',
+    });
+  },
+
+  async createPriorityReview(
+    caseId: string,
+    payload: CreatePriorityReviewRequest
+  ): Promise<{ ticket: EmergencyPriorityTicketDto }> {
+    return request<{ ticket: EmergencyPriorityTicketDto }>(`/api/v1/cases/${caseId}/priority-review`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  async getCasePriorityReview(caseId: string): Promise<{ ticket: EmergencyPriorityTicketDto | null }> {
+    return request<{ ticket: EmergencyPriorityTicketDto | null }>(`/api/v1/cases/${caseId}/priority-review`, {
+      method: 'GET',
+    });
+  },
+
+  async getHospitalPriorityTickets(hospitalId: string): Promise<{ tickets: EmergencyPriorityTicketDto[] }> {
+    return request<{ tickets: EmergencyPriorityTicketDto[] }>(`/api/v1/hospitals/${hospitalId}/priority-tickets`, {
+      method: 'GET',
+    });
+  },
+
+  async decidePriorityTicket(
+    ticketId: string,
+    payload: DecidePriorityTicketRequest
+  ): Promise<{ ticket: EmergencyPriorityTicketDto; deferredProcedure?: ScheduledProcedureDto }> {
+    return request<{ ticket: EmergencyPriorityTicketDto; deferredProcedure?: ScheduledProcedureDto }>(
+      `/api/v1/priority-tickets/${ticketId}/decision`,
+      {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }
+    );
   },
 };
