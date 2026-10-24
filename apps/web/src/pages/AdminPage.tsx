@@ -15,13 +15,15 @@ import {
   RefreshCw,
   Search,
   Layers,
+  Compass,
 } from 'lucide-react';
 import { apiClient } from '../lib/api-client';
 import { subscribeToRealtimeEvent } from '../lib/socket';
 import { AdminOverviewDto, AuditEventDto, ReceivingStatus } from '@goldenhour/contracts';
+import { Simulation3DView } from '../components/Simulation3DView';
 
 export const AdminPage: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'fleet' | 'cases' | 'audit' | 'settings'>('fleet');
+  const [activeTab, setActiveTab] = useState<'fleet' | 'simulation' | 'cases' | 'audit' | 'settings'>('fleet');
 
   // Overview & cases state
   const [overview, setOverview] = useState<AdminOverviewDto | null>(null);
@@ -342,10 +344,21 @@ export const AdminPage: React.FC = () => {
       </div>
 
       {/* Tabs Navigation */}
-      <div className="flex border-b border-slate-800 gap-2">
+      <div className="flex border-b border-slate-800 gap-2 overflow-x-auto">
+        <button
+          onClick={() => setActiveTab('simulation')}
+          className={`flex items-center gap-2 px-4 py-2.5 text-xs font-bold transition border-b-2 whitespace-nowrap ${
+            activeTab === 'simulation'
+              ? 'border-purple-500 text-purple-300'
+              : 'border-transparent text-slate-400 hover:text-slate-200'
+          }`}
+        >
+          <Compass className="w-4 h-4 text-purple-400" />
+          3D Digital Twin Simulation
+        </button>
         <button
           onClick={() => setActiveTab('fleet')}
-          className={`flex items-center gap-2 px-4 py-2.5 text-xs font-bold transition border-b-2 ${
+          className={`flex items-center gap-2 px-4 py-2.5 text-xs font-bold transition border-b-2 whitespace-nowrap ${
             activeTab === 'fleet'
               ? 'border-purple-500 text-purple-300'
               : 'border-transparent text-slate-400 hover:text-slate-200'
@@ -388,6 +401,11 @@ export const AdminPage: React.FC = () => {
           Operational Settings
         </button>
       </div>
+
+      {/* TAB 0: 3D DIGITAL TWIN SIMULATION */}
+      {activeTab === 'simulation' && (
+        <Simulation3DView activeCaseId={cases[0]?.id} onTraceCase={handleTraceCase} />
+      )}
 
       {/* TAB 1: FLEET READINESS */}
       {activeTab === 'fleet' && (

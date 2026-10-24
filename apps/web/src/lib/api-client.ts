@@ -379,4 +379,65 @@ export const apiClient = {
       method: 'POST',
     });
   },
+
+  // Simulation API (Phase 10)
+  async getSimulationState(): Promise<{
+    simulationRun: any;
+    ambulancePosition: any;
+    roadGraph: any;
+    activeRoute: any;
+    trafficOverrides: Record<string, number>;
+  }> {
+    return request<any>('/api/v1/simulation/state', { method: 'GET' });
+  },
+
+  async playSimulation(speedMultiplier = 1.0): Promise<{ simulationRun: any }> {
+    return request<any>('/api/v1/simulation/play', {
+      method: 'POST',
+      body: JSON.stringify({ speedMultiplier }),
+    });
+  },
+
+  async pauseSimulation(): Promise<{ simulationRun: any }> {
+    return request<any>('/api/v1/simulation/pause', { method: 'POST' });
+  },
+
+  async stepSimulation(stepSeconds = 5): Promise<{ simulationRun: any }> {
+    return request<any>('/api/v1/simulation/step', {
+      method: 'POST',
+      body: JSON.stringify({ stepSeconds }),
+    });
+  },
+
+  async setSimulationSpeed(speedMultiplier: number): Promise<{ simulationRun: any }> {
+    return request<any>('/api/v1/simulation/speed', {
+      method: 'POST',
+      body: JSON.stringify({ speedMultiplier }),
+    });
+  },
+
+  async resetSimulation(): Promise<{ simulationRun: any }> {
+    return request<any>('/api/v1/simulation/reset', { method: 'POST' });
+  },
+
+  async injectTrafficScenario(edgeId = 'edge-1', multiplier = 3.0): Promise<{ message: string }> {
+    return request<any>('/api/v1/simulation/scenarios/traffic', {
+      method: 'POST',
+      body: JSON.stringify({ edgeId, multiplier }),
+    });
+  },
+
+  async injectHospitalSurgeScenario(hospitalId = 'hosp-001'): Promise<{ message: string }> {
+    return request<any>('/api/v1/simulation/scenarios/hospital-surge', {
+      method: 'POST',
+      body: JSON.stringify({ hospitalId }),
+    });
+  },
+
+  async injectDecompensationScenario(caseId: string): Promise<{ message: string }> {
+    return request<any>('/api/v1/simulation/scenarios/decompensation', {
+      method: 'POST',
+      body: JSON.stringify({ caseId }),
+    });
+  },
 };

@@ -145,6 +145,20 @@ global.fetch = vi.fn().mockImplementation((url: string) => {
     });
   }
 
+  if (url.includes('/api/v1/simulation/state')) {
+    return Promise.resolve({
+      ok: true,
+      headers: new Headers({ 'content-type': 'application/json' }),
+      json: () =>
+        Promise.resolve({
+          simulationRun: { running: false, speedMultiplier: 1.0, simulatedSeconds: 0 },
+          ambulancePosition: { x: 120, y: 150, heading: 0, speed: 0, serverSequence: 1 },
+          roadGraph: { nodes: [], edges: [] },
+          trafficOverrides: {},
+        }),
+    });
+  }
+
   if (url.includes('/api/v1/admin/settings')) {
     return Promise.resolve({
       ok: true,
