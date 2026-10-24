@@ -7,7 +7,8 @@ import {
 } from '@goldenhour/contracts';
 import { store } from '../../db/store.js';
 import { requireAuth } from '../auth/plugin.js';
-import { runAgent1 } from '../agents/agent1.js';
+import { runAgent1, runAgent1Async } from '../agents/agent1.js';
+import { callGeminiCoordinatorBriefing } from '../agents/gemini.js';
 import { runAgent2 } from '../agents/agent2.js';
 import { runAgent3 } from '../agents/agent3.js';
 import { routingProvider } from '../routing/index.js';
@@ -103,8 +104,8 @@ export async function registerCaseRoutes(fastify: FastifyInstance) {
 
       const { observations } = parseResult.data;
 
-      // Execute Agent 1 deterministic reasoning
-      const agent1Proposal = runAgent1(observations);
+      // Execute Agent 1 (uses Gemini AI LLM agent when API key is provided)
+      const agent1Proposal = await runAgent1Async(observations);
 
       // Persist new assessment
       const assessment = store.createAssessment(
@@ -232,6 +233,20 @@ export async function registerCaseRoutes(fastify: FastifyInstance) {
         store.trafficOverrides
       );
 
+      // Generate AI Coordinator Briefing via Gemini Agent
+      let coordinatorBriefing: string | undefined;
+      try {
+        coordinatorBriefing = await callGeminiCoordinatorBriefing(
+          emergencyCase.patientLabel,
+          assessment.observations.presentingIssue,
+          ranking.hospitalA,
+          ranking.hospitalB,
+          ranking.hospitalC
+        );
+      } catch {
+        // Standby
+      }
+
       const recommendation: RecommendationDto = {
         id: `rec-${req.params.id}-v${assessment.version}-${Date.now()}`,
         caseId: req.params.id,
@@ -242,6 +257,7 @@ export async function registerCaseRoutes(fastify: FastifyInstance) {
         hospitalB: ranking.hospitalB,
         hospitalC: ranking.hospitalC,
         allCandidates: ranking.allEvaluations,
+        coordinatorBriefing,
         generatedAt: new Date().toISOString(),
       };
 

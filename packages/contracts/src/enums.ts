@@ -48,6 +48,7 @@ export enum RequestStatus {
   DECLINED = 'DECLINED',
   CANCELED = 'CANCELED',
   EXPIRED = 'EXPIRED',
+  SUPERSEDED = 'SUPERSEDED',
 }
 
 export enum DestinationReadiness {

@@ -17,12 +17,15 @@ import {
   Radio,
   Check,
   XCircle,
+  ShieldCheck,
 } from 'lucide-react';
 import {
   HospitalDto,
   ResourcePoolDto,
   StaffAvailabilityDto,
   HospitalRequestDto,
+  AllocationDto,
+  AllocationState,
   ReceivingStatus,
   RequestRole,
   RequestStatus,
@@ -42,6 +45,7 @@ export const HospitalPage: React.FC = () => {
   const [resourcePools, setResourcePools] = useState<ResourcePoolDto[]>([]);
   const [staffList, setStaffList] = useState<StaffAvailabilityDto[]>([]);
   const [requests, setRequests] = useState<HospitalRequestDto[]>([]);
+  const [allocations, setAllocations] = useState<AllocationDto[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
@@ -76,16 +80,18 @@ export const HospitalPage: React.FC = () => {
     setLoading(true);
     setError(null);
     try {
-      const [hospRes, poolsRes, staffRes, reqRes] = await Promise.all([
+      const [hospRes, poolsRes, staffRes, reqRes, allocRes] = await Promise.all([
         apiClient.getHospital(hospId),
         apiClient.getHospitalResources(hospId),
         apiClient.getHospitalStaff(hospId),
         apiClient.listHospitalRequests(hospId),
+        apiClient.listHospitalAllocations(hospId).catch(() => ({ allocations: [] })),
       ]);
       setCurrentHospital(hospRes.hospital);
       setResourcePools(poolsRes.resourcePools);
       setStaffList(staffRes.staffAvailability);
       setRequests(reqRes.requests || []);
+      setAllocations(allocRes.allocations || []);
     } catch (err: any) {
       setError(err?.message || 'Failed to load hospital state');
     } finally {
@@ -118,12 +124,56 @@ export const HospitalPage: React.FC = () => {
       }
     });
 
+    const unsubAlloc = subscribeToRealtimeEvent('allocation.updated', (event) => {
+      const updated = event.payload as AllocationDto;
+      if (updated.hospitalId === selectedHospitalId) {
+        setAllocations((prev) =>
+          prev.map((a) => (a.id === updated.id ? updated : a))
+        );
+      }
+    });
+
     return () => {
       unsubReqCreated();
       unsubReqUpdated();
       unsubInv();
+      unsubAlloc();
     };
   }, [selectedHospitalId]);
+
+  // Handle Start In-Use (Phase 8: RESERVED -> IN_USE)
+  const handleStartUse = async (allocId: string, expectedVersion: number) => {
+    try {
+      setActionSuccess(null);
+      setError(null);
+      const res = await apiClient.startUseAllocation(allocId, { expectedVersion });
+      setAllocations((prev) =>
+        prev.map((a) => (a.id === allocId ? res.allocation : a))
+      );
+      setActionSuccess('Resource marked IN_USE. Active clinical occupancy begun.');
+      setTimeout(() => setActionSuccess(null), 3500);
+      loadHospitalData(selectedHospitalId);
+    } catch (err: any) {
+      setError(err?.message || 'Failed to start resource use');
+    }
+  };
+
+  // Handle Explicit Release (Phase 8: IN_USE / RESERVED -> RELEASED)
+  const handleRelease = async (allocId: string, expectedVersion: number) => {
+    try {
+      setActionSuccess(null);
+      setError(null);
+      const res = await apiClient.releaseAllocation(allocId, { expectedVersion });
+      setAllocations((prev) =>
+        prev.map((a) => (a.id === allocId ? res.allocation : a))
+      );
+      setActionSuccess('Resource successfully RELEASED! Available count restored to hospital inventory.');
+      setTimeout(() => setActionSuccess(null), 3500);
+      loadHospitalData(selectedHospitalId);
+    } catch (err: any) {
+      setError(err?.message || 'Failed to release resource');
+    }
+  };
 
   // Handle Accept Incoming Request (Triggers atomic reservation)
   const handleAcceptRequest = async (requestId: string) => {
@@ -519,6 +569,110 @@ export const HospitalPage: React.FC = () => {
                   </div>
                 );
               })}
+            </div>
+          </div>
+
+          {/* Active Case Allocations (Phase 8) */}
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div>
+                <h2 className="text-base font-bold text-white flex items-center gap-2">
+                  <ShieldCheck className="w-5 h-5 text-blue-400" />
+                  Active Case Equipment Allocations
+                </h2>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Lifecycle: <span className="text-amber-400 font-semibold">RESERVED</span> &rarr;{' '}
+                  <span className="text-blue-400 font-semibold">IN_USE</span> &rarr;{' '}
+                  <span className="text-emerald-400 font-semibold">RELEASED</span>. Arrival does not release equipment.
+                </p>
+              </div>
+              <span className="text-xs font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-300 font-bold">
+                {allocations.filter((a) => a.state !== AllocationState.RELEASED).length} Active
+              </span>
+            </div>
+
+            <div className="space-y-3">
+              {allocations.length === 0 ? (
+                <div className="text-xs text-slate-500 py-4 text-center">
+                  No active equipment allocations recorded for this facility.
+                </div>
+              ) : (
+                allocations.map((alloc) => {
+                  const isReserved = alloc.state === AllocationState.RESERVED;
+                  const isInUse = alloc.state === AllocationState.IN_USE;
+                  const isReleased = alloc.state === AllocationState.RELEASED;
+
+                  return (
+                    <div
+                      key={alloc.id}
+                      className={`p-3.5 bg-slate-950 rounded-xl border space-y-2 transition ${
+                        isReserved
+                          ? 'border-amber-500/30 bg-amber-950/10'
+                          : isInUse
+                          ? 'border-blue-500/30 bg-blue-950/10'
+                          : 'border-slate-800 opacity-60'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-bold text-white">{alloc.resourceType}</span>
+                          <span className="text-[11px] font-mono text-slate-400">
+                            Case: {alloc.caseId}
+                          </span>
+                        </div>
+
+                        {/* State Badge */}
+                        <div>
+                          {isReserved && (
+                            <span className="px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[10px] font-bold">
+                              RESERVED
+                            </span>
+                          )}
+                          {isInUse && (
+                            <span className="px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-300 border border-blue-500/40 text-[10px] font-bold">
+                              IN ACTIVE USE
+                            </span>
+                          )}
+                          {isReleased && (
+                            <span className="px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 text-[10px] font-bold">
+                              RELEASED
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-between text-[11px] text-slate-400 pt-1 border-t border-slate-900">
+                        <span>
+                          Quantity: <strong>{alloc.quantity} unit</strong>
+                        </span>
+                        <span className="font-mono text-slate-500">
+                          Reserved: {new Date(alloc.reservedAt).toLocaleTimeString()}
+                        </span>
+                      </div>
+
+                      {/* Action buttons */}
+                      <div className="flex gap-2 pt-1">
+                        {isReserved && (
+                          <button
+                            onClick={() => handleStartUse(alloc.id, alloc.version)}
+                            className="flex-1 py-1 px-3 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-semibold shadow-md shadow-blue-600/20 transition"
+                          >
+                            Start In-Use
+                          </button>
+                        )}
+                        {!isReleased && (
+                          <button
+                            onClick={() => handleRelease(alloc.id, alloc.version)}
+                            className="py-1 px-3 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs font-medium border border-slate-700 transition"
+                          >
+                            Release Resource
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
             </div>
           </div>
         </div>

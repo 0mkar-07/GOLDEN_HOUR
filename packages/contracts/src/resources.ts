@@ -61,3 +61,9 @@ export const AllocationSchema = z.object({
 });
 
 export type AllocationDto = z.infer<typeof AllocationSchema>;
+
+export const UpdateAllocationStateRequestSchema = z.object({
+  expectedVersion: z.number().int().positive(),
+});
+
+export type UpdateAllocationStateRequest = z.infer<typeof UpdateAllocationStateRequestSchema>;

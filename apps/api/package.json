@@ -20,6 +20,7 @@
     "@fastify/sensible": "^6.0.3",
     "@goldenhour/contracts": "workspace:*",
     "@goldenhour/scenario-fixtures": "workspace:*",
+    "@google/genai": "^2.31.0",
     "dotenv": "^16.4.7",
     "fastify": "^5.2.1",
     "fastify-plugin": "^6.0.1",

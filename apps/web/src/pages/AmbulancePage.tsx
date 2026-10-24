@@ -113,6 +113,7 @@ export const AmbulancePage: React.FC = () => {
   const [recommendation, setRecommendation] = useState<RecommendationDto | null>(null);
   const [destination, setDestination] = useState<DestinationDto | null>(null);
   const [dispatching, setDispatching] = useState<boolean>(false);
+  const [diverting, setDiverting] = useState<boolean>(false);
 
   // Road Graph & Simulation State
   const [roadGraph, setRoadGraph] = useState<RoadGraphDto | null>(null);
@@ -288,6 +289,62 @@ export const AmbulancePage: React.FC = () => {
       setError(err?.message || 'Failed to dispatch case');
     } finally {
       setDispatching(false);
+    }
+  };
+
+  // Phase 8: Clinician Diversion to Proximity Backup
+  const handleDivert = async (targetHospitalId: string) => {
+    if (!activeCase || !destination) return;
+    try {
+      setDiverting(true);
+      setError(null);
+      const res = await apiClient.divertCase(activeCase.id, {
+        targetHospitalId,
+        expectedDestinationVersion: activeCase.destinationVersion,
+        reason: 'Clinician emergency diversion to stabilization facility',
+      });
+      setActiveCase(res.case);
+      setDestination(res.destination);
+      setSuccessMsg(`Route diverted to ${targetHospitalId}! Unused reservations at previous hospital released.`);
+      setTimeout(() => setSuccessMsg(null), 5000);
+    } catch (err: any) {
+      setError(err?.message || 'Failed to divert route');
+    } finally {
+      setDiverting(false);
+    }
+  };
+
+  // Phase 8: Record Arrival at Hospital Bay
+  const handleArrive = async () => {
+    if (!activeCase) return;
+    try {
+      setLoading(true);
+      setError(null);
+      const res = await apiClient.arriveCase(activeCase.id);
+      setActiveCase(res.case);
+      setSuccessMsg('Ambulance marked ARRIVED at receiving facility bay. Resources remain reserved.');
+      setTimeout(() => setSuccessMsg(null), 4000);
+    } catch (err: any) {
+      setError(err?.message || 'Failed to record arrival');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Phase 8: Clinical Handover to Receiving ED
+  const handleHandover = async () => {
+    if (!activeCase) return;
+    try {
+      setLoading(true);
+      setError(null);
+      const res = await apiClient.handoverCase(activeCase.id);
+      setActiveCase(res.case);
+      setSuccessMsg('Clinical handover complete! Patient care transferred to ED team.');
+      setTimeout(() => setSuccessMsg(null), 4000);
+    } catch (err: any) {
+      setError(err?.message || 'Failed to record handover');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -541,11 +598,38 @@ export const AmbulancePage: React.FC = () => {
               </span>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-3">
               <span className="text-slate-400">Assessment Version:</span>
               <span className="font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-300 font-bold">
                 v{activeCase.assessmentVersion}
               </span>
+
+              {/* Transit Journey Actions (Phase 8) */}
+              {activeCase.caseStatus === CaseStatus.EN_ROUTE && (
+                <button
+                  onClick={handleArrive}
+                  disabled={loading}
+                  className="px-3 py-1 bg-blue-600 hover:bg-blue-500 text-white rounded-lg font-semibold text-xs transition shadow-md shadow-blue-600/20"
+                >
+                  Mark Arrived at ED Bay
+                </button>
+              )}
+
+              {activeCase.caseStatus === CaseStatus.ARRIVED && (
+                <button
+                  onClick={handleHandover}
+                  disabled={loading}
+                  className="px-3 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg font-semibold text-xs transition shadow-md shadow-emerald-600/20"
+                >
+                  Complete Clinical Handover
+                </button>
+              )}
+
+              {activeCase.caseStatus === CaseStatus.HANDED_OVER && (
+                <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[11px] font-bold">
+                  ✓ Handover Complete
+                </span>
+              )}
             </div>
           </div>
         )}
@@ -930,7 +1014,7 @@ export const AmbulancePage: React.FC = () => {
         </div>
       </div>
 
-      {/* Destination Recommendations Section (Phase 5 & 6) */}
+      {/* Destination Recommendations Section (Phase 5, 6, & 8) */}
       <RecommendationPanel
         recommendation={recommendation}
         loading={loading}
@@ -938,6 +1022,8 @@ export const AmbulancePage: React.FC = () => {
         destination={destination}
         onDispatch={handleDispatchCase}
         dispatching={dispatching}
+        onDivert={handleDivert}
+        diverting={diverting}
       />
 
       {/* Live Road Network Transit Map */}

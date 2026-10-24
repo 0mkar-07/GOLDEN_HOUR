@@ -552,6 +552,312 @@ class GoldenHourDatabaseStore {
     return Array.from(this.allocations.values()).filter((a) => a.caseId === caseId);
   }
 
+  public listAllocationsByHospital(hospitalId: string): AllocationDto[] {
+    return Array.from(this.allocations.values()).filter((a) => a.hospitalId === hospitalId);
+  }
+
+  public getAllocation(id: string): AllocationDto | undefined {
+    return this.allocations.get(id);
+  }
+
+  // --- Phase 8: Diversion, Arrival, Handover, and Resource Lifecycle ---
+
+  /**
+   * Clinician-initiated Diversion.
+   * Cancels old pending/accepted main request, releases unused reservations at old hospital,
+   * advances destination generation, and creates new MAIN request to target hospital.
+   */
+  public divertCase(
+    caseId: string,
+    targetHospitalId: string,
+    expectedDestinationVersion: number,
+    reason: string,
+    actorUserId: string
+  ): {
+    case: EmergencyCaseDto;
+    destination: DestinationDto;
+    request: HospitalRequestDto;
+    releasedAllocations: AllocationDto[];
+  } {
+    const emergencyCase = this.cases.get(caseId);
+    if (!emergencyCase) {
+      throw new Error(`Case not found: ${caseId}`);
+    }
+
+    if (emergencyCase.destinationVersion !== expectedDestinationVersion) {
+      throw new Error(
+        `Version conflict on diversion: Expected destination generation ${expectedDestinationVersion}, but current is ${emergencyCase.destinationVersion}`
+      );
+    }
+
+    const now = new Date().toISOString();
+    const nextGen = emergencyCase.destinationVersion + 1;
+    const oldHospitalId = emergencyCase.selectedHospitalId;
+
+    // 1. Cancel previous pending/main requests for this case
+    for (const [reqId, req] of this.hospitalRequests.entries()) {
+      if (req.caseId === caseId) {
+        if (req.status === RequestStatus.PENDING) {
+          req.status = req.role === RequestRole.MAIN ? RequestStatus.CANCELED : RequestStatus.SUPERSEDED;
+          req.respondedAt = now;
+          this.hospitalRequests.set(reqId, req);
+          this.queueOutbox('request.updated', reqId, req);
+        } else if (req.role === RequestRole.MAIN && req.status === RequestStatus.ACCEPTED) {
+          req.status = RequestStatus.CANCELED;
+          this.hospitalRequests.set(reqId, req);
+          this.queueOutbox('request.updated', reqId, req);
+        }
+      }
+    }
+
+    // 2. Release unused reservations at old hospital (In-use allocations are never released)
+    const releasedAllocations: AllocationDto[] = [];
+    for (const [allocId, alloc] of this.allocations.entries()) {
+      if (alloc.caseId === caseId && alloc.state === AllocationState.RESERVED) {
+        alloc.state = AllocationState.RELEASED;
+        alloc.releasedAt = now;
+        alloc.version += 1;
+        this.allocations.set(allocId, alloc);
+        releasedAllocations.push(alloc);
+
+        const pool = this.resourcePools.get(alloc.resourcePoolId);
+        if (pool) {
+          pool.reservedCount = Math.max(0, pool.reservedCount - alloc.quantity);
+          pool.availableCount =
+            pool.totalCount - pool.outOfServiceCount - pool.externalOccupancy - pool.reservedCount - pool.inUseCount;
+          pool.version += 1;
+          pool.updatedAt = now;
+          this.resourcePools.set(pool.id, pool);
+          this.queueOutbox('inventory.updated', pool.hospitalId, { hospitalId: pool.hospitalId });
+        }
+      }
+    }
+
+    // 3. Update Destination
+    const destination: DestinationDto = {
+      caseId,
+      hospitalId: targetHospitalId,
+      readiness: DestinationReadiness.PENDING,
+      version: nextGen,
+      selectedBy: DestinationActor.CLINICIAN,
+      updatedAt: now,
+    };
+    this.destinations.set(caseId, destination);
+
+    // 4. Create new MAIN Request for targetHospitalId
+    const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+    const newMainReq: HospitalRequestDto = {
+      id: `req-main-${caseId}-gen${nextGen}`,
+      caseId,
+      hospitalId: targetHospitalId,
+      role: RequestRole.MAIN,
+      status: RequestStatus.PENDING,
+      destinationGeneration: nextGen,
+      expiresAt,
+      respondedAt: null,
+      createdAt: now,
+    };
+    this.hospitalRequests.set(newMainReq.id, newMainReq);
+
+    // 5. Update Case State
+    emergencyCase.selectedHospitalId = targetHospitalId;
+    emergencyCase.destinationVersion = nextGen;
+    emergencyCase.caseStatus = CaseStatus.EN_ROUTE;
+    emergencyCase.updatedAt = now;
+    this.cases.set(caseId, emergencyCase);
+
+    this.recordAudit({
+      actorId: actorUserId,
+      actorRole: UserRole.AMBULANCE,
+      action: 'CASE_DIVERTED',
+      entityType: 'EMERGENCY_CASE',
+      entityId: caseId,
+      details: {
+        oldHospitalId,
+        newHospitalId: targetHospitalId,
+        generation: nextGen,
+        reason,
+        releasedAllocationsCount: releasedAllocations.length,
+      },
+    });
+
+    this.queueOutbox('case.updated', caseId, emergencyCase);
+    this.queueOutbox('destination.updated', caseId, destination);
+    this.queueOutbox('request.created', newMainReq.id, newMainReq);
+
+    return {
+      case: emergencyCase,
+      destination,
+      request: newMainReq,
+      releasedAllocations,
+    };
+  }
+
+  /**
+   * Ambulance arrival at destination.
+   * Case status -> ARRIVED. Does NOT release equipment.
+   */
+  public arriveCase(caseId: string, actorUserId: string): EmergencyCaseDto {
+    const emergencyCase = this.cases.get(caseId);
+    if (!emergencyCase) {
+      throw new Error(`Case not found: ${caseId}`);
+    }
+
+    const now = new Date().toISOString();
+    emergencyCase.caseStatus = CaseStatus.ARRIVED;
+    emergencyCase.updatedAt = now;
+    this.cases.set(caseId, emergencyCase);
+
+    this.recordAudit({
+      actorId: actorUserId,
+      actorRole: UserRole.AMBULANCE,
+      action: 'CASE_ARRIVED',
+      entityType: 'EMERGENCY_CASE',
+      entityId: caseId,
+      details: { hospitalId: emergencyCase.selectedHospitalId },
+    });
+
+    this.queueOutbox('case.updated', caseId, emergencyCase);
+    return emergencyCase;
+  }
+
+  /**
+   * Clinical Handover to emergency department.
+   * Case status -> HANDED_OVER. Occupied equipment remains in-use until hospital releases.
+   */
+  public handoverCase(caseId: string, actorUserId: string): EmergencyCaseDto {
+    const emergencyCase = this.cases.get(caseId);
+    if (!emergencyCase) {
+      throw new Error(`Case not found: ${caseId}`);
+    }
+
+    const now = new Date().toISOString();
+    emergencyCase.caseStatus = CaseStatus.HANDED_OVER;
+    emergencyCase.updatedAt = now;
+    this.cases.set(caseId, emergencyCase);
+
+    this.recordAudit({
+      actorId: actorUserId,
+      actorRole: UserRole.AMBULANCE,
+      action: 'CASE_HANDED_OVER',
+      entityType: 'EMERGENCY_CASE',
+      entityId: caseId,
+      details: { hospitalId: emergencyCase.selectedHospitalId },
+    });
+
+    this.queueOutbox('case.updated', caseId, emergencyCase);
+    return emergencyCase;
+  }
+
+  /**
+   * Hospital starts active use of a reserved resource (e.g. patient placed on ventilator / in trauma bay).
+   * Transitions allocation state from RESERVED to IN_USE.
+   */
+  public startUseAllocation(
+    allocationId: string,
+    expectedVersion: number,
+    actorUserId: string
+  ): AllocationDto {
+    const alloc = this.allocations.get(allocationId);
+    if (!alloc) {
+      throw new Error(`Allocation not found: ${allocationId}`);
+    }
+
+    if (alloc.version !== expectedVersion) {
+      throw new Error(`Version conflict: expected version ${expectedVersion}, got ${alloc.version}`);
+    }
+
+    if (alloc.state !== AllocationState.RESERVED) {
+      throw new Error(`Cannot start use: allocation is currently ${alloc.state}`);
+    }
+
+    const now = new Date().toISOString();
+    const pool = this.resourcePools.get(alloc.resourcePoolId);
+    if (pool) {
+      pool.reservedCount = Math.max(0, pool.reservedCount - alloc.quantity);
+      pool.inUseCount += alloc.quantity;
+      pool.availableCount =
+        pool.totalCount - pool.outOfServiceCount - pool.externalOccupancy - pool.reservedCount - pool.inUseCount;
+      pool.version += 1;
+      pool.updatedAt = now;
+      this.resourcePools.set(pool.id, pool);
+      this.queueOutbox('inventory.updated', pool.hospitalId, { hospitalId: pool.hospitalId });
+    }
+
+    alloc.state = AllocationState.IN_USE;
+    alloc.inUseAt = now;
+    alloc.version += 1;
+    this.allocations.set(alloc.id, alloc);
+
+    this.recordAudit({
+      actorId: actorUserId,
+      actorRole: UserRole.HOSPITAL,
+      action: 'RESOURCE_START_USE',
+      entityType: 'ALLOCATION',
+      entityId: alloc.id,
+      details: { resourceType: alloc.resourceType, poolId: alloc.resourcePoolId },
+    });
+
+    this.queueOutbox('allocation.updated', alloc.id, alloc);
+    return alloc;
+  }
+
+  /**
+   * Explicit hospital release of resource (after patient stabilization/transfer/discharge).
+   * Transitions allocation to RELEASED and restores available count.
+   */
+  public releaseAllocation(
+    allocationId: string,
+    expectedVersion: number,
+    actorUserId: string
+  ): AllocationDto {
+    const alloc = this.allocations.get(allocationId);
+    if (!alloc) {
+      throw new Error(`Allocation not found: ${allocationId}`);
+    }
+
+    if (alloc.version !== expectedVersion) {
+      throw new Error(`Version conflict: expected version ${expectedVersion}, got ${alloc.version}`);
+    }
+
+    if (alloc.state === AllocationState.RELEASED) {
+      return alloc; // Idempotent
+    }
+
+    const now = new Date().toISOString();
+    const pool = this.resourcePools.get(alloc.resourcePoolId);
+    if (pool) {
+      if (alloc.state === AllocationState.IN_USE) {
+        pool.inUseCount = Math.max(0, pool.inUseCount - alloc.quantity);
+      } else if (alloc.state === AllocationState.RESERVED) {
+        pool.reservedCount = Math.max(0, pool.reservedCount - alloc.quantity);
+      }
+      pool.availableCount =
+        pool.totalCount - pool.outOfServiceCount - pool.externalOccupancy - pool.reservedCount - pool.inUseCount;
+      pool.version += 1;
+      pool.updatedAt = now;
+      this.resourcePools.set(pool.id, pool);
+      this.queueOutbox('inventory.updated', pool.hospitalId, { hospitalId: pool.hospitalId });
+    }
+
+    alloc.state = AllocationState.RELEASED;
+    alloc.releasedAt = now;
+    alloc.version += 1;
+    this.allocations.set(alloc.id, alloc);
+
+    this.recordAudit({
+      actorId: actorUserId,
+      actorRole: UserRole.HOSPITAL,
+      action: 'RESOURCE_RELEASED',
+      entityType: 'ALLOCATION',
+      entityId: alloc.id,
+      details: { resourceType: alloc.resourceType, poolId: alloc.resourcePoolId },
+    });
+
+    this.queueOutbox('allocation.updated', alloc.id, alloc);
+    return alloc;
+  }
+
   /**
    * Atomic Multi-Resource Reservation Transaction.
    * On main request acceptance: locks case and pools, verifies availability,
@@ -610,23 +916,42 @@ class GoldenHourDatabaseStore {
 
     // MAIN Request: Atomic Multi-Resource Allocation
     const assessment = this.getLatestAssessment(request.caseId);
-    const confirmedNeeds = assessment?.confirmedFullCareNeeds || [];
+    const targetHospital = this.hospitals.get(request.hospitalId);
+
+    // If target hospital has all full-care capabilities, allocate full-care needs;
+    // otherwise if this hospital was selected for immediate stabilization (e.g. diversion to Backup B),
+    // allocate confirmed stabilization needs.
+    const isFullCareFacility =
+      targetHospital &&
+      assessment?.confirmedFullCareNeeds &&
+      assessment.confirmedFullCareNeeds.length > 0 &&
+      assessment.confirmedFullCareNeeds.every((need) =>
+        targetHospital.capabilities.includes(need)
+      );
+
+    const activeNeeds = isFullCareFacility
+      ? assessment?.confirmedFullCareNeeds || []
+      : assessment?.confirmedStabilizationNeeds || [];
 
     // Determine required resource types and staff specialties
     const neededResourceTypes: ResourceType[] = [];
-    if (confirmedNeeds.includes('VENTILATORS')) neededResourceTypes.push(ResourceType.VENTILATOR);
-    if (confirmedNeeds.includes('TRAUMA_BAY') || confirmedNeeds.includes('TRAUMA_L1')) {
+    if (activeNeeds.includes('VENTILATORS')) neededResourceTypes.push(ResourceType.VENTILATOR);
+    if (
+      activeNeeds.includes('TRAUMA_BAY') ||
+      activeNeeds.includes('TRAUMA_L1') ||
+      activeNeeds.includes('STABILIZATION')
+    ) {
       neededResourceTypes.push(ResourceType.TRAUMA_BAY);
     }
-    if (confirmedNeeds.includes('ICU')) neededResourceTypes.push(ResourceType.ICU_BED);
-    if (confirmedNeeds.includes('CT_SCAN')) neededResourceTypes.push(ResourceType.CT_SCAN);
-    if (confirmedNeeds.includes('CARDIAC_CATH')) neededResourceTypes.push(ResourceType.CATH_LAB);
+    if (activeNeeds.includes('ICU')) neededResourceTypes.push(ResourceType.ICU_BED);
+    if (activeNeeds.includes('CT_SCAN')) neededResourceTypes.push(ResourceType.CT_SCAN);
+    if (activeNeeds.includes('CARDIAC_CATH')) neededResourceTypes.push(ResourceType.CATH_LAB);
 
     // Determine needed staff specialties
     const neededSpecialties: SpecialtyType[] = [];
-    if (confirmedNeeds.includes('NEUROSURGERY')) neededSpecialties.push(SpecialtyType.NEUROSURGEON);
-    if (confirmedNeeds.includes('TRAUMA_L1')) neededSpecialties.push(SpecialtyType.TRAUMA_SURGEON);
-    if (confirmedNeeds.includes('CARDIAC_CATH')) neededSpecialties.push(SpecialtyType.CARDIOLOGIST);
+    if (activeNeeds.includes('NEUROSURGERY')) neededSpecialties.push(SpecialtyType.NEUROSURGEON);
+    if (activeNeeds.includes('TRAUMA_L1')) neededSpecialties.push(SpecialtyType.TRAUMA_SURGEON);
+    if (activeNeeds.includes('CARDIAC_CATH')) neededSpecialties.push(SpecialtyType.CARDIOLOGIST);
 
     // 1. ATOMIC CHECK: Verify ALL required pools have availableCount >= 1
     const hospitalPools = this.listResourcePoolsByHospital(request.hospitalId);

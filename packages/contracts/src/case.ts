@@ -89,6 +89,14 @@ export const Agent1ProposalSchema = z.object({
 
 export type Agent1Proposal = z.infer<typeof Agent1ProposalSchema>;
 
+export const DivertCaseRequestSchema = z.object({
+  targetHospitalId: z.string().min(1),
+  expectedDestinationVersion: z.number().int().positive(),
+  reason: z.string().min(1),
+});
+
+export type DivertCaseRequest = z.infer<typeof DivertCaseRequestSchema>;
+
 export const HospitalRequestSchema = z.object({
   id: z.string(),
   caseId: z.string(),

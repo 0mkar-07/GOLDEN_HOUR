@@ -29,6 +29,7 @@ export const RecommendationSchema = z.object({
   hospitalB: CandidateEvaluationSchema.nullable(),
   hospitalC: CandidateEvaluationSchema.nullable(),
   allCandidates: z.array(CandidateEvaluationSchema).default([]),
+  coordinatorBriefing: z.string().optional(),
   generatedAt: z.string(),
 });
 

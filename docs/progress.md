@@ -1,9 +1,9 @@
 # GoldenHour Implementation Progress
 
 ## Project State
-- **Status:** Phase 6 & 7 Complete & Verified
-- **Current Phase:** Phase 6 (Dispatch, acceptance, and atomic reservations) & Phase 7 (Real-time synchronization and recovery) Gates PASSED
-- **Next Phase:** Phase 8 (Simulation clock, motion, and traffic)
+- **Status:** Phase 8 Complete & Verified
+- **Current Phase:** Phase 8 (Dynamic backups, diversion, arrival, and release) Gate PASSED
+- **Next Phase:** Phase 9 (Admin management and monitoring)
 - **Active Spec:** `docs/implementation-plan.md`
 
 ## Milestones Log
@@ -94,3 +94,30 @@
   - `pnpm typecheck`: Passed (4/4 packages, 0 errors).
   - `pnpm test`: Passed (**46/46 tests passing across 11 test suites**).
   - `pnpm build`: Passed (Clean production builds for contracts, scenario-fixtures, API, and Web).
+
+### 2026-10-24 — Phase 8: Dynamic Diversion, Arrival, Handover, and AI LLM Agent Integration
+- **Google Gemini AI Agent Integration (`apps/api/src/modules/agents/gemini.ts`):**
+  - Integrated `@google/genai` (Google Gen AI SDK) using `gemini-2.5-flash`.
+  - Configured root `.env` and `.env.example` with `GEMINI_API_KEY=` for immediate user key configuration.
+  - **Agent 1 (`runAgent1Async`):** Asynchronously analyzes clinical notes, telemetry, and vital signs; produces physician-grade reasoning; strictly preserves explicit unknown surfacing (`missingInputs`).
+  - **AI Dispatch Coordinator Agent (`callGeminiCoordinatorBriefing`):** Synthesizes live operational briefings for the crew and receiving centers, providing dynamic diversion triggers.
+- **Clinician Emergency Diversion (`POST /api/v1/cases/:id/divert`):**
+  - Paramedic can divert en-route ambulance to Backup B/C.
+  - Advances destination version/generation, marks old main request `CANCELED`.
+  - **Atomic Release:** Unused reservations at the old hospital are atomically released (`pool.reservedCount -= 1`, `pool.availableCount += 1`).
+  - Creates new `MAIN` request for target hospital.
+  - Rejects late/stale acceptance attempts from the old hospital with `409 REQUEST_OBSOLETE`.
+- **Ambulance Arrival & Handover (`POST /api/v1/cases/:id/arrive` & `/handover`):**
+  - **Arrival Invariant:** Marking arrival at the ED bay does **not** automatically release equipment or mark every item in-use.
+  - **Handover Invariant:** Clinical handover transitions case to `HANDED_OVER`; active equipment remains in-use.
+- **Hospital Equipment Lifecycle (`POST /api/v1/allocations/:id/start-use` & `/release`):**
+  - `start-use`: Transitions allocation from `RESERVED` $\rightarrow$ `IN_USE` (`pool.reservedCount -= 1`, `pool.inUseCount += 1`). Available count is preserved.
+  - `release`: Transitions allocation from `IN_USE` / `RESERVED` $\rightarrow$ `RELEASED` and restores available capacity to hospital inventory.
+- **Frontend Enhancements:**
+  - `RecommendationPanel.tsx`: Displays AI Dispatch Coordinator Briefing and "Divert to Backup B" action.
+  - `AmbulancePage.tsx`: Displays "Mark Arrived at ED Bay" and "Complete Clinical Handover" actions in the metadata strip.
+  - `HospitalPage.tsx`: Displays **Active Case Equipment Allocations** table with live "Start In-Use" and "Release Resource" controls.
+- **Verification Checks:**
+  - `pnpm typecheck`: Passed (4/4 packages, 0 errors).
+  - `pnpm test`: Passed (**57/57 tests passing across 13 test suites**).
+  - `pnpm build`: Passed (Clean production builds across all monorepo packages).

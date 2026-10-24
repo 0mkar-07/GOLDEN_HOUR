@@ -256,4 +256,67 @@ export const apiClient = {
       method: 'GET',
     });
   },
+
+  // Phase 8: Diversion, Arrival, Handover, and Resource Lifecycle
+  async divertCase(
+    caseId: string,
+    payload: {
+      targetHospitalId: string;
+      expectedDestinationVersion: number;
+      reason: string;
+    }
+  ): Promise<{
+    case: EmergencyCaseDto;
+    destination: DestinationDto;
+    request: HospitalRequestDto;
+    releasedAllocations: AllocationDto[];
+  }> {
+    return request<{
+      case: EmergencyCaseDto;
+      destination: DestinationDto;
+      request: HospitalRequestDto;
+      releasedAllocations: AllocationDto[];
+    }>(`/api/v1/cases/${caseId}/divert`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  async arriveCase(caseId: string): Promise<{ case: EmergencyCaseDto }> {
+    return request<{ case: EmergencyCaseDto }>(`/api/v1/cases/${caseId}/arrive`, {
+      method: 'POST',
+    });
+  },
+
+  async handoverCase(caseId: string): Promise<{ case: EmergencyCaseDto }> {
+    return request<{ case: EmergencyCaseDto }>(`/api/v1/cases/${caseId}/handover`, {
+      method: 'POST',
+    });
+  },
+
+  async listHospitalAllocations(hospitalId: string): Promise<{ allocations: AllocationDto[] }> {
+    return request<{ allocations: AllocationDto[] }>(`/api/v1/hospitals/${hospitalId}/allocations`, {
+      method: 'GET',
+    });
+  },
+
+  async startUseAllocation(
+    allocationId: string,
+    payload: { expectedVersion: number }
+  ): Promise<{ allocation: AllocationDto }> {
+    return request<{ allocation: AllocationDto }>(`/api/v1/allocations/${allocationId}/start-use`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  async releaseAllocation(
+    allocationId: string,
+    payload: { expectedVersion: number }
+  ): Promise<{ allocation: AllocationDto }> {
+    return request<{ allocation: AllocationDto }>(`/api/v1/allocations/${allocationId}/release`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
 };

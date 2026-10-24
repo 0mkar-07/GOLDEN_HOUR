@@ -19,6 +19,7 @@ import {
   Send,
   Radio,
   XCircle,
+  ArrowRightLeft,
 } from 'lucide-react';
 
 interface RecommendationPanelProps {
@@ -29,6 +30,8 @@ interface RecommendationPanelProps {
   destination?: DestinationDto | null;
   onDispatch?: () => void;
   dispatching?: boolean;
+  onDivert?: (hospitalId: string) => void;
+  diverting?: boolean;
 }
 
 export const RecommendationPanel: React.FC<RecommendationPanelProps> = ({
@@ -39,6 +42,8 @@ export const RecommendationPanel: React.FC<RecommendationPanelProps> = ({
   destination,
   onDispatch,
   dispatching = false,
+  onDivert,
+  diverting = false,
 }) => {
   if (!recommendation) {
     return (
@@ -233,6 +238,20 @@ export const RecommendationPanel: React.FC<RecommendationPanelProps> = ({
               <div className="text-[11px] text-slate-500 italic">
                 Standby notice only; does not lock equipment.
               </div>
+
+              {/* Clinician Diversion Action */}
+              {onDivert && destination && destination.hospitalId !== hospitalB.hospitalId && (
+                <div className="pt-2 border-t border-slate-800">
+                  <button
+                    onClick={() => onDivert(hospitalB.hospitalId)}
+                    disabled={diverting || loading}
+                    className="w-full py-1.5 px-3 bg-amber-600/20 hover:bg-amber-600 text-amber-300 hover:text-white border border-amber-500/40 rounded-xl text-xs font-semibold transition flex items-center justify-center gap-1.5 disabled:opacity-50"
+                  >
+                    <ArrowRightLeft className="w-3.5 h-3.5" />
+                    {diverting ? 'Diverting Route...' : 'Divert to Backup B'}
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -285,6 +304,24 @@ export const RecommendationPanel: React.FC<RecommendationPanelProps> = ({
           )}
         </div>
       </div>
+
+      {/* AI Clinical Coordinator Briefing (Agent LLM Narrative) */}
+      {recommendation.coordinatorBriefing && (
+        <div className="bg-gradient-to-r from-blue-950/40 via-purple-950/25 to-slate-900 border border-purple-500/30 rounded-2xl p-5 space-y-2.5 shadow-lg shadow-purple-950/20">
+          <div className="flex items-center gap-2">
+            <Sparkles className="w-4 h-4 text-purple-400 animate-pulse" />
+            <h4 className="text-xs font-bold text-white uppercase tracking-wider">
+              AI Dispatch Coordinator Briefing (Gemini Agent)
+            </h4>
+            <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 font-mono font-semibold">
+              Live Synthesis
+            </span>
+          </div>
+          <p className="text-xs text-purple-200/90 leading-relaxed">
+            {recommendation.coordinatorBriefing}
+          </p>
+        </div>
+      )}
 
       {/* Tri-Agent Explanation Panel */}
       <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-3">
