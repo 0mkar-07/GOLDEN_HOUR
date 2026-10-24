@@ -1,9 +1,9 @@
 # GoldenHour Implementation Progress
 
 ## Project State
-- **Status:** Phase 5 Complete & Verified
-- **Current Phase:** Phase 5 (Agent 2, Agent 3, and routing) Gate PASSED
-- **Next Phase:** Phase 6 (Dispatch, acceptance, and atomic reservations)
+- **Status:** Phase 6 & 7 Complete & Verified
+- **Current Phase:** Phase 6 (Dispatch, acceptance, and atomic reservations) & Phase 7 (Real-time synchronization and recovery) Gates PASSED
+- **Next Phase:** Phase 8 (Simulation clock, motion, and traffic)
 - **Active Spec:** `docs/implementation-plan.md`
 
 ## Milestones Log
@@ -62,3 +62,35 @@
     - Verified Primary A, Backups B/C cards, and Tri-Agent breakdown rendering.
 
 - **Gate Acceptance:** All Phase 5 criteria met. Seeded scenarios yield predictable results; the UI explains why each option was selected; B/C use the latest position.
+
+### 2026-10-24 — Phase 6: Dispatch, Acceptance, and Atomic Reservations
+- **Dispatch Orchestration (`apps/api/src/modules/dispatch/routes.ts`):**
+  - Ambulance triggers dispatch: generates 1 `MAIN` reservation request to Hospital A and 2 `STANDBY` informational requests to Hospitals B and C.
+  - Updates case status to `DISPATCHING` with `destinationGeneration` incremented.
+- **Atomic Multi-Resource Allocation Transaction (`apps/api/src/db/store.ts`):**
+  - On Hospital A acceptance: checks that **all** required equipment pools (`VENTILATOR`, `TRAUMA_BAY`, etc.) have `availableCount >= 1` and all required staff specialty teams have `availableTeamSlots >= 1`.
+  - Atomic commit: reserves each pool (`reservedCount += 1`, `availableCount -= 1`) and decrements staff team slots.
+  - **All-or-Nothing Rollback Invariant:** If any resource is unavailable, throws `409 RESOURCE_UNAVAILABLE` with zero partial allocations.
+  - **Standby Isolation Invariant:** Standby notices B and C do **not** lock scarce inventory (`allocations = []`).
+  - **Generation Check:** Rejects stale/obsolete requests if case destination generation has advanced (`409 REQUEST_OBSOLETE`).
+  - **Idempotency:** Repeated acceptance returns existing allocations without double-allocating.
+  - **Cross-Hospital Authorization:** Enforces `403 FORBIDDEN` if Hospital B attempts to accept Hospital A requests.
+
+### 2026-10-24 — Phase 7: Real-Time Synchronization and UI Integration
+- **Socket.IO Real-Time Engine (`apps/api/src/modules/realtime/index.ts`):**
+  - Cookie session authentication and room-based authorization (`ambulance:cases`, `hospital:<id>`, `admin`).
+  - Broadcasts authorized domain events: `case.updated`, `destination.updated`, `request.created`, `request.updated`, `inventory.updated`.
+  - Server-side transactional outbox queue recording all real-time events.
+- **Frontend Real-Time UI Sync:**
+  - Client Socket.IO listener utility in `apps/web/src/lib/socket.ts`.
+  - **Ambulance Terminal (`apps/web/src/pages/AmbulancePage.tsx`):**
+    - "Dispatch Ambulance to Hospital A" action button on recommendation panel.
+    - Live destination state transitions: `REQUESTED` (awaiting confirmation) $\rightarrow$ `CONFIRMED` (resources locked).
+  - **Hospital Command Portal (`apps/web/src/pages/HospitalPage.tsx`):**
+    - Incoming Case Requests Queue with distinct badges for `MAIN TARGET (A)` vs `STANDBY (B/C)`.
+    - Live action buttons: "Accept & Reserve" (triggers atomic multi-resource allocation) and "Decline / Divert".
+    - Instant live inventory recalculation upon reservation.
+- **Verification Checks:**
+  - `pnpm typecheck`: Passed (4/4 packages, 0 errors).
+  - `pnpm test`: Passed (**46/46 tests passing across 11 test suites**).
+  - `pnpm build`: Passed (Clean production builds for contracts, scenario-fixtures, API, and Web).

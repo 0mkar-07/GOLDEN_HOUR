@@ -17,6 +17,9 @@ import {
   RecommendationDto,
   RoadGraphDto,
   AmbulancePositionDto,
+  HospitalRequestDto,
+  DestinationDto,
+  AllocationDto,
 } from '@goldenhour/contracts';
 
 export class ApiError extends Error {
@@ -196,6 +199,60 @@ export const apiClient = {
       trafficOverrides: Record<string, number>;
       ambulancePosition: AmbulancePositionDto;
     }>('/api/v1/routing/graph', {
+      method: 'GET',
+    });
+  },
+
+  // Dispatch & Hospital Request API
+  async dispatchCase(caseId: string): Promise<{
+    case: EmergencyCaseDto;
+    requests: HospitalRequestDto[];
+    destination: DestinationDto;
+  }> {
+    return request<{
+      case: EmergencyCaseDto;
+      requests: HospitalRequestDto[];
+      destination: DestinationDto;
+    }>(`/api/v1/cases/${caseId}/dispatch`, {
+      method: 'POST',
+    });
+  },
+
+  async listHospitalRequests(hospitalId?: string): Promise<{ requests: HospitalRequestDto[] }> {
+    const query = hospitalId ? `?hospitalId=${hospitalId}` : '';
+    return request<{ requests: HospitalRequestDto[] }>(`/api/v1/hospital-requests${query}`, {
+      method: 'GET',
+    });
+  },
+
+  async acceptHospitalRequest(requestId: string): Promise<{
+    request: HospitalRequestDto;
+    case: EmergencyCaseDto;
+    allocations: AllocationDto[];
+  }> {
+    return request<{
+      request: HospitalRequestDto;
+      case: EmergencyCaseDto;
+      allocations: AllocationDto[];
+    }>(`/api/v1/hospital-requests/${requestId}/accept`, {
+      method: 'POST',
+    });
+  },
+
+  async declineHospitalRequest(requestId: string): Promise<{ request: HospitalRequestDto }> {
+    return request<{ request: HospitalRequestDto }>(`/api/v1/hospital-requests/${requestId}/decline`, {
+      method: 'POST',
+    });
+  },
+
+  async getCaseDestination(caseId: string): Promise<{
+    destination: DestinationDto | null;
+    allocations: AllocationDto[];
+  }> {
+    return request<{
+      destination: DestinationDto | null;
+      allocations: AllocationDto[];
+    }>(`/api/v1/cases/${caseId}/destination`, {
       method: 'GET',
     });
   },

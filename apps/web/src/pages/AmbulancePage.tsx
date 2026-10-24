@@ -26,9 +26,12 @@ import {
   RoadGraphDto,
   AmbulancePositionDto,
   HospitalDto,
+  DestinationDto,
+  DestinationReadiness,
 } from '@goldenhour/contracts';
 import { apiClient } from '../lib/api-client';
 import { useAuth } from '../context/AuthContext';
+import { subscribeToRealtimeEvent } from '../lib/socket';
 import { RoadNetworkMap } from '../components/RoadNetworkMap';
 import { RecommendationPanel } from '../components/RecommendationPanel';
 
@@ -108,6 +111,8 @@ export const AmbulancePage: React.FC = () => {
   const [assessment, setAssessment] = useState<AssessmentDto | null>(null);
   const [agent1Proposal, setAgent1Proposal] = useState<Agent1Proposal | null>(null);
   const [recommendation, setRecommendation] = useState<RecommendationDto | null>(null);
+  const [destination, setDestination] = useState<DestinationDto | null>(null);
+  const [dispatching, setDispatching] = useState<boolean>(false);
 
   // Road Graph & Simulation State
   const [roadGraph, setRoadGraph] = useState<RoadGraphDto | null>(null);
@@ -188,6 +193,16 @@ export const AmbulancePage: React.FC = () => {
             } catch {
               // Standby
             }
+
+            // Load existing destination
+            try {
+              const destRes = await apiClient.getCaseDestination(latest.id);
+              if (destRes?.destination) {
+                setDestination(destRes.destination);
+              }
+            } catch {
+              // Standby
+            }
           }
         }
       }
@@ -217,6 +232,28 @@ export const AmbulancePage: React.FC = () => {
     loadMapAndHospitals();
   }, [loadActiveCase, loadMapAndHospitals]);
 
+  // Real-Time Event Subscriptions for Case & Destination updates
+  useEffect(() => {
+    const unsubDest = subscribeToRealtimeEvent('destination.updated', (event) => {
+      const dest = event.payload as DestinationDto;
+      if (dest.caseId === activeCase?.id) {
+        setDestination(dest);
+      }
+    });
+
+    const unsubCase = subscribeToRealtimeEvent('case.updated', (event) => {
+      const c = event.payload as EmergencyCaseDto;
+      if (c.id === activeCase?.id) {
+        setActiveCase(c);
+      }
+    });
+
+    return () => {
+      unsubDest();
+      unsubCase();
+    };
+  }, [activeCase?.id]);
+
   // Generate / Refresh Recommendations
   const handleGenerateRecommendations = async () => {
     if (!activeCase) return;
@@ -231,6 +268,26 @@ export const AmbulancePage: React.FC = () => {
       setError(err?.message || 'Failed to generate recommendations');
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Dispatch Case to Hospital A
+  const handleDispatchCase = async () => {
+    if (!activeCase || !recommendation) return;
+    try {
+      setDispatching(true);
+      setError(null);
+      const res = await apiClient.dispatchCase(activeCase.id);
+      setActiveCase(res.case);
+      setDestination(res.destination);
+      setSuccessMsg(
+        'Ambulance dispatched! MAIN reservation request sent to Hospital A; STANDBY notices sent to B & C.'
+      );
+      setTimeout(() => setSuccessMsg(null), 5000);
+    } catch (err: any) {
+      setError(err?.message || 'Failed to dispatch case');
+    } finally {
+      setDispatching(false);
     }
   };
 
@@ -873,11 +930,14 @@ export const AmbulancePage: React.FC = () => {
         </div>
       </div>
 
-      {/* Destination Recommendations Section (Phase 5) */}
+      {/* Destination Recommendations Section (Phase 5 & 6) */}
       <RecommendationPanel
         recommendation={recommendation}
         loading={loading}
         onRefresh={handleGenerateRecommendations}
+        destination={destination}
+        onDispatch={handleDispatchCase}
+        dispatching={dispatching}
       />
 
       {/* Live Road Network Transit Map */}

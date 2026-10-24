@@ -3,6 +3,7 @@ import {
   RecommendationDto,
   CandidateEvaluationDto,
   DestinationReadiness,
+  DestinationDto,
 } from '@goldenhour/contracts';
 import {
   MapPin,
@@ -15,6 +16,9 @@ import {
   CheckCircle2,
   RefreshCw,
   ExternalLink,
+  Send,
+  Radio,
+  XCircle,
 } from 'lucide-react';
 
 interface RecommendationPanelProps {
@@ -22,6 +26,9 @@ interface RecommendationPanelProps {
   loading: boolean;
   onRefresh: () => void;
   onSelectCandidate?: (candidate: CandidateEvaluationDto) => void;
+  destination?: DestinationDto | null;
+  onDispatch?: () => void;
+  dispatching?: boolean;
 }
 
 export const RecommendationPanel: React.FC<RecommendationPanelProps> = ({
@@ -29,6 +36,9 @@ export const RecommendationPanel: React.FC<RecommendationPanelProps> = ({
   loading,
   onRefresh,
   onSelectCandidate,
+  destination,
+  onDispatch,
+  dispatching = false,
 }) => {
   if (!recommendation) {
     return (
@@ -122,12 +132,54 @@ export const RecommendationPanel: React.FC<RecommendationPanelProps> = ({
                 </ul>
               </div>
 
-              {/* Readiness Badge */}
-              <div className="pt-1 flex items-center justify-between text-xs">
-                <span className="text-slate-400">Destination Status:</span>
-                <span className="px-2 py-0.5 rounded bg-blue-500/20 text-blue-300 border border-blue-500/40 font-semibold font-mono text-[10px]">
-                  {hospitalA.readiness} (Phase 6 Dispatch)
-                </span>
+              {/* Dispatch Action & Live Destination Readiness */}
+              <div className="pt-2 border-t border-slate-800 space-y-2">
+                {destination ? (
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-slate-400">Destination State:</span>
+                      {destination.readiness === DestinationReadiness.PENDING && (
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 text-xs font-bold animate-pulse">
+                          <Radio className="w-3.5 h-3.5 text-amber-400" />
+                          Requested (Awaiting Confirmation)
+                        </span>
+                      )}
+                      {destination.readiness === DestinationReadiness.CONFIRMED && (
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-xs font-bold">
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          Confirmed • Resources Reserved
+                        </span>
+                      )}
+                      {destination.readiness === DestinationReadiness.UNAVAILABLE && (
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/40 text-xs font-bold">
+                          <XCircle className="w-3.5 h-3.5" />
+                          Unavailable / Declined
+                        </span>
+                      )}
+                    </div>
+                    {destination.readiness === DestinationReadiness.CONFIRMED && (
+                      <p className="text-[11px] text-emerald-400/90 leading-tight">
+                        Hospital {hospitalA.name} confirmed the reservation. Full-care inventory atomically locked.
+                      </p>
+                    )}
+                    {destination.readiness === DestinationReadiness.PENDING && (
+                      <p className="text-[11px] text-amber-300/80 leading-tight">
+                        Ambulance dispatched. Waiting for Hospital {hospitalA.name} coordinator to accept reservation.
+                      </p>
+                    )}
+                  </div>
+                ) : (
+                  onDispatch && (
+                    <button
+                      onClick={onDispatch}
+                      disabled={dispatching || loading}
+                      className="w-full py-2.5 px-4 bg-red-600 hover:bg-red-500 disabled:opacity-50 text-white font-semibold text-xs rounded-xl shadow-lg shadow-red-600/30 transition flex items-center justify-center gap-2"
+                    >
+                      <Send className="w-4 h-4" />
+                      {dispatching ? 'Dispatching & Notifying...' : 'Dispatch Ambulance to Hospital A'}
+                    </button>
+                  )
+                )}
               </div>
             </div>
           ) : (

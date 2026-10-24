@@ -13,16 +13,24 @@ import {
   Sliders,
   ChevronRight,
   TrendingDown,
+  Bell,
+  Radio,
+  Check,
+  XCircle,
 } from 'lucide-react';
 import {
   HospitalDto,
   ResourcePoolDto,
   StaffAvailabilityDto,
+  HospitalRequestDto,
   ReceivingStatus,
+  RequestRole,
+  RequestStatus,
   UserRole,
 } from '@goldenhour/contracts';
 import { apiClient, ApiError } from '../lib/api-client';
 import { useAuth } from '../context/AuthContext';
+import { subscribeToRealtimeEvent } from '../lib/socket';
 
 export const HospitalPage: React.FC = () => {
   const { user } = useAuth();
@@ -33,6 +41,7 @@ export const HospitalPage: React.FC = () => {
   const [currentHospital, setCurrentHospital] = useState<HospitalDto | null>(null);
   const [resourcePools, setResourcePools] = useState<ResourcePoolDto[]>([]);
   const [staffList, setStaffList] = useState<StaffAvailabilityDto[]>([]);
+  const [requests, setRequests] = useState<HospitalRequestDto[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
@@ -62,25 +71,95 @@ export const HospitalPage: React.FC = () => {
     }
   }, []);
 
-  // Load selected hospital details, resources, and staff
+  // Load selected hospital details, resources, staff, and incoming requests
   const loadHospitalData = useCallback(async (hospId: string) => {
     setLoading(true);
     setError(null);
     try {
-      const [hospRes, poolsRes, staffRes] = await Promise.all([
+      const [hospRes, poolsRes, staffRes, reqRes] = await Promise.all([
         apiClient.getHospital(hospId),
         apiClient.getHospitalResources(hospId),
         apiClient.getHospitalStaff(hospId),
+        apiClient.listHospitalRequests(hospId),
       ]);
       setCurrentHospital(hospRes.hospital);
       setResourcePools(poolsRes.resourcePools);
       setStaffList(staffRes.staffAvailability);
+      setRequests(reqRes.requests || []);
     } catch (err: any) {
       setError(err?.message || 'Failed to load hospital state');
     } finally {
       setLoading(false);
     }
   }, []);
+
+  // Real-Time Event Subscriptions
+  useEffect(() => {
+    const unsubReqCreated = subscribeToRealtimeEvent('request.created', (event) => {
+      const newReq = event.payload as HospitalRequestDto;
+      if (newReq.hospitalId === selectedHospitalId) {
+        setRequests((prev) => [newReq, ...prev.filter((r) => r.id !== newReq.id)]);
+      }
+    });
+
+    const unsubReqUpdated = subscribeToRealtimeEvent('request.updated', (event) => {
+      const updatedReq = event.payload as HospitalRequestDto;
+      setRequests((prev) =>
+        prev.map((r) => (r.id === updatedReq.id ? updatedReq : r))
+      );
+    });
+
+    const unsubInv = subscribeToRealtimeEvent('inventory.updated', (event) => {
+      if ((event.payload as any)?.hospitalId === selectedHospitalId) {
+        // Refetch inventory to reflect new reservations
+        apiClient.getHospitalResources(selectedHospitalId).then((res) => {
+          setResourcePools(res.resourcePools);
+        });
+      }
+    });
+
+    return () => {
+      unsubReqCreated();
+      unsubReqUpdated();
+      unsubInv();
+    };
+  }, [selectedHospitalId]);
+
+  // Handle Accept Incoming Request (Triggers atomic reservation)
+  const handleAcceptRequest = async (requestId: string) => {
+    try {
+      setActionSuccess(null);
+      setError(null);
+      const res = await apiClient.acceptHospitalRequest(requestId);
+
+      setRequests((prev) =>
+        prev.map((r) => (r.id === requestId ? res.request : r))
+      );
+      setActionSuccess(`Request accepted! Case is now EN_ROUTE. Required resources atomically reserved.`);
+      setTimeout(() => setActionSuccess(null), 4000);
+
+      // Reload inventory pools to show new reservation numbers
+      loadHospitalData(selectedHospitalId);
+    } catch (err: any) {
+      setError(err?.message || 'Failed to accept hospital request');
+    }
+  };
+
+  // Handle Decline Request
+  const handleDeclineRequest = async (requestId: string) => {
+    try {
+      setActionSuccess(null);
+      setError(null);
+      const res = await apiClient.declineHospitalRequest(requestId);
+      setRequests((prev) =>
+        prev.map((r) => (r.id === requestId ? res.request : r))
+      );
+      setActionSuccess('Request declined.');
+      setTimeout(() => setActionSuccess(null), 3500);
+    } catch (err: any) {
+      setError(err?.message || 'Failed to decline request');
+    }
+  };
 
   useEffect(() => {
     loadHospitals();
@@ -446,6 +525,124 @@ export const HospitalPage: React.FC = () => {
 
         {/* Staff Readiness & Invariant Guard (1 Col) */}
         <div className="space-y-4">
+          {/* Incoming Dispatch Requests Queue */}
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <h2 className="text-base font-bold text-white flex items-center gap-2">
+                <Bell className="w-5 h-5 text-red-400" />
+                Incoming Case Requests
+              </h2>
+              <span className="text-xs px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 font-mono font-bold">
+                {requests.length} Total
+              </span>
+            </div>
+
+            <div className="space-y-3">
+              {requests.length === 0 ? (
+                <div className="text-xs text-slate-500 py-4 text-center">
+                  No active ambulance requests for this facility.
+                </div>
+              ) : (
+                requests.map((req) => {
+                  const isMain = req.role === RequestRole.MAIN;
+                  const isPending = req.status === RequestStatus.PENDING;
+                  const isAccepted = req.status === RequestStatus.ACCEPTED;
+                  const isDeclined = req.status === RequestStatus.DECLINED;
+
+                  return (
+                    <div
+                      key={req.id}
+                      className={`p-4 rounded-xl border space-y-3 transition ${
+                        isMain
+                          ? 'bg-red-950/20 border-red-500/30 shadow-lg shadow-red-500/5'
+                          : 'bg-amber-950/15 border-amber-500/25'
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span
+                              className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded ${
+                                isMain
+                                  ? 'bg-red-500 text-white'
+                                  : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                              }`}
+                            >
+                              {isMain ? 'Target: Full-Care (A)' : 'Standby Notice (B/C)'}
+                            </span>
+                            <span className="text-xs font-mono text-slate-400">
+                              Gen {req.destinationGeneration}
+                            </span>
+                          </div>
+                          <div className="mt-1.5 text-xs text-slate-300">
+                            Case:{' '}
+                            <strong className="text-white font-mono">{req.caseId}</strong>
+                          </div>
+                        </div>
+
+                        {/* Status Badge */}
+                        <div>
+                          {isPending && (
+                            <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[11px] font-bold animate-pulse">
+                              <Radio className="w-3 h-3 text-amber-400" />
+                              Pending Action
+                            </span>
+                          )}
+                          {isAccepted && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[11px] font-bold">
+                              <CheckCircle2 className="w-3 h-3" />
+                              Accepted
+                            </span>
+                          )}
+                          {isDeclined && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 text-[11px] font-bold">
+                              <XCircle className="w-3 h-3" />
+                              Declined
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="text-[11px] text-slate-400 flex justify-between items-center pt-1 border-t border-slate-800/60">
+                        <span>
+                          {isMain
+                            ? 'Accepting atomically reserves required pools & staff slots.'
+                            : 'Standby acknowledgment does not lock equipment.'}
+                        </span>
+                        <span className="font-mono text-slate-500">
+                          {new Date(req.createdAt).toLocaleTimeString()}
+                        </span>
+                      </div>
+
+                      {/* Action Buttons for Pending */}
+                      {isPending && (
+                        <div className="flex gap-2 pt-1">
+                          <button
+                            onClick={() => handleAcceptRequest(req.id)}
+                            className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-semibold shadow-md transition flex items-center justify-center gap-1.5 ${
+                              isMain
+                                ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-600/20'
+                                : 'bg-amber-600 hover:bg-amber-500 text-white shadow-amber-600/20'
+                            }`}
+                          >
+                            <Check className="w-3.5 h-3.5" />
+                            {isMain ? 'Accept & Reserve' : 'Acknowledge Standby'}
+                          </button>
+                          <button
+                            onClick={() => handleDeclineRequest(req.id)}
+                            className="py-1.5 px-3 bg-slate-800 hover:bg-rose-950/60 text-slate-300 hover:text-rose-300 border border-slate-700 hover:border-rose-800/60 rounded-lg text-xs font-medium transition"
+                          >
+                            Decline
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+
           {/* Staff Readiness Box */}
           <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-4">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
