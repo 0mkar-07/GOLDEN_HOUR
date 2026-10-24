@@ -31,8 +31,10 @@ import {
   AmbulancePositionDto,
   RoadGraphDto,
   SharedRouteDto,
+  CareObjective,
 } from '@goldenhour/contracts';
 import { apiClient } from '../lib/api-client';
+import { DeteriorationDiversionDialog } from '../components/DeteriorationDiversionDialog';
 import { useAuth } from '../context/AuthContext';
 import { subscribeToRealtimeEvent } from '../lib/socket';
 import { MapPanel } from '../components/MapPanel';
@@ -118,6 +120,7 @@ export const AmbulancePage: React.FC = () => {
   const [caseRoutes, setCaseRoutes] = useState<Record<string, SharedRouteDto>>({});
   const [dispatching, setDispatching] = useState<boolean>(false);
   const [diverting, setDiverting] = useState<boolean>(false);
+  const [showDeteriorationModal, setShowDeteriorationModal] = useState<boolean>(false);
 
   // Road Graph & Telemetry State
   const [roadGraph, setRoadGraph] = useState<RoadGraphDto | null>(null);
@@ -361,17 +364,28 @@ export const AmbulancePage: React.FC = () => {
     }
   };
 
-  // Dispatch Ambulance
-  const handleDispatch = async () => {
+  // Dispatch Ambulance (Full-Care or Stabilization Priority)
+  const handleDispatch = async (targetHospitalId?: string, careObjective: CareObjective = 'FULL_CARE') => {
     if (!activeCase) return;
     try {
       setDispatching(true);
       setError(null);
-      const res = await apiClient.dispatchCase(activeCase.id);
+      const res = await apiClient.dispatchCase(activeCase.id, {
+        targetHospitalId,
+        careObjective,
+        selectionReason:
+          careObjective === 'STABILIZATION' ? 'NO_FULL_CARE_AVAILABLE' : 'INITIAL_FULL_CARE',
+      });
       setActiveCase(res.case);
       setDestination(res.destination);
       loadRoutes(activeCase.id);
-      setSuccessMsg('Case dispatched! Primary A received reservation request; Backups received standby notices.');
+      const targetHosp = hospitals.find((h) => h.id === res.destination.hospitalId);
+      const targetName = targetHosp?.name || 'selected facility';
+      setSuccessMsg(
+        careObjective === 'STABILIZATION'
+          ? `Ambulance dispatched to ${targetName} for emergency stabilization! Alternative centers notified on standby.`
+          : `Case dispatched to ${targetName}! Definitive full-care reservation requested; standby centers notified.`
+      );
       setTimeout(() => setSuccessMsg(null), 5000);
     } catch (err: any) {
       setError(err?.message || 'Failed to dispatch case');
@@ -380,8 +394,8 @@ export const AmbulancePage: React.FC = () => {
     }
   };
 
-  // Clinician Diversion
-  const handleDivert = async (hospitalId: string) => {
+  // Clinician Diversion (Dynamic Backup Selection or Reported Deterioration)
+  const handleDivert = async (hospitalId: string, customReason?: string, previewId?: string) => {
     if (!activeCase || !destination) return;
     try {
       setDiverting(true);
@@ -389,12 +403,19 @@ export const AmbulancePage: React.FC = () => {
       const res = await apiClient.divertCase(activeCase.id, {
         targetHospitalId: hospitalId,
         expectedDestinationVersion: destination.version,
-        reason: 'Clinician in-transit diversion',
+        reason: customReason || 'Clinician in-transit diversion',
+        previewId,
       });
       setActiveCase(res.case);
       setDestination(res.destination);
       loadRoutes(activeCase.id);
-      setSuccessMsg(`Ambulance diverted to backup hospital! Prior reservations at St. Jude released atomically.`);
+      const oldHosp = hospitals.find((h) => h.id === destination.hospitalId);
+      const newHosp = hospitals.find((h) => h.id === hospitalId);
+      const releaseInfo =
+        res.releasedAllocations && res.releasedAllocations.length > 0
+          ? ` Prior unused reservations at ${oldHosp?.name || 'previous hospital'} released atomically.`
+          : '';
+      setSuccessMsg(`Ambulance diverted to ${newHosp?.name || 'backup hospital'}!${releaseInfo}`);
       setTimeout(() => setSuccessMsg(null), 5000);
     } catch (err: any) {
       setError(err?.message || 'Failed to divert case');
@@ -659,6 +680,20 @@ export const AmbulancePage: React.FC = () => {
               <span className="font-mono px-2 py-0.5 rounded bg-[#F6F8F8] text-[#172B2A] border border-[#DCE5E3] font-bold">
                 v{activeCase.assessmentVersion}
               </span>
+
+              {/* In-Transit Deterioration Diversion Entry Point */}
+              {destination &&
+                activeCase.caseStatus !== CaseStatus.ARRIVED &&
+                activeCase.caseStatus !== CaseStatus.HANDED_OVER && (
+                  <button
+                    onClick={() => setShowDeteriorationModal(true)}
+                    className="px-3 py-1 bg-[#FFF8E6] hover:bg-[#FDF0D0] text-[#8A5800] border border-[#F3E5AB] rounded-lg font-bold text-xs transition shadow-xs flex items-center gap-1.5"
+                    title="Report acute clinical deterioration and evaluate nearest stabilization alternatives"
+                  >
+                    <AlertTriangle className="w-3.5 h-3.5 text-[#8A5800]" />
+                    Patient deteriorating — review diversion
+                  </button>
+                )}
 
               {activeCase.caseStatus === CaseStatus.EN_ROUTE && (
                 <button
@@ -956,6 +991,22 @@ export const AmbulancePage: React.FC = () => {
         onDivert={handleDivert}
         diverting={diverting}
       />
+
+      {/* Patient In-Transit Deterioration Diversion Dialog */}
+      {showDeteriorationModal && destination && activeCase && (
+        <DeteriorationDiversionDialog
+          isOpen={showDeteriorationModal}
+          onClose={() => setShowDeteriorationModal(false)}
+          caseId={activeCase.id}
+          currentDestinationName={
+            hospitals.find((h) => h.id === destination.hospitalId)?.name || 'Current Destination'
+          }
+          currentDestinationVersion={destination.version}
+          onConfirmDiversion={async (targetHospId, reason, previewId) => {
+            await handleDivert(targetHospId, reason, previewId);
+          }}
+        />
+      )}
     </div>
   );
 };

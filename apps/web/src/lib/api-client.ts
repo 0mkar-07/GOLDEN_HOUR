@@ -25,6 +25,9 @@ import {
   AuditFilterQueryDto,
   SystemSettingsDto,
   AdminHospitalUpdateDto,
+  DispatchCaseRequest,
+  DiversionPreviewDto,
+  CareObjective,
 } from '@goldenhour/contracts';
 
 export class ApiError extends Error {
@@ -209,7 +212,14 @@ export const apiClient = {
   },
 
   // Dispatch & Hospital Request API
-  async dispatchCase(caseId: string): Promise<{
+  async dispatchCase(
+    caseId: string,
+    payload?: {
+      targetHospitalId?: string;
+      careObjective?: CareObjective;
+      selectionReason?: string;
+    }
+  ): Promise<{
     case: EmergencyCaseDto;
     requests: HospitalRequestDto[];
     destination: DestinationDto;
@@ -219,6 +229,13 @@ export const apiClient = {
       requests: HospitalRequestDto[];
       destination: DestinationDto;
     }>(`/api/v1/cases/${caseId}/dispatch`, {
+      method: 'POST',
+      body: payload ? JSON.stringify(payload) : undefined,
+    });
+  },
+
+  async getDiversionPreview(caseId: string): Promise<{ preview: DiversionPreviewDto }> {
+    return request<{ preview: DiversionPreviewDto }>(`/api/v1/cases/${caseId}/diversion-preview`, {
       method: 'POST',
     });
   },
@@ -269,6 +286,8 @@ export const apiClient = {
       targetHospitalId: string;
       expectedDestinationVersion: number;
       reason: string;
+      previewId?: string;
+      careObjective?: CareObjective;
     }
   ): Promise<{
     case: EmergencyCaseDto;

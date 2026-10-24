@@ -26,6 +26,7 @@ import {
   AdminOverviewDto,
   AdminHospitalUpdateDto,
   ReceivingStatus,
+  CareObjective,
 } from '@goldenhour/contracts';
 import {
   SEEDED_HOSPITALS,
@@ -508,8 +509,16 @@ class GoldenHourDatabaseStore {
     this.trafficOverrides = {};
   }
 
-  // --- Dispatch & Request Operations (Phase 6) ---
-  public dispatchCase(caseId: string, actorUserId: string): {
+  // --- Dispatch & Request Operations (Phase 6 & Stabilization Priority) ---
+  public dispatchCase(
+    caseId: string,
+    actorUserId: string,
+    options?: {
+      targetHospitalId?: string;
+      careObjective?: CareObjective;
+      selectionReason?: string;
+    }
+  ): {
     case: EmergencyCaseDto;
     requests: HospitalRequestDto[];
     destination: DestinationDto;
@@ -520,9 +529,28 @@ class GoldenHourDatabaseStore {
     }
 
     const rec = this.recommendations.get(caseId);
-    if (!rec || !rec.hospitalA) {
-      throw new Error(`Cannot dispatch case ${caseId}: No confirmed destination recommendation available.`);
+    if (!rec) {
+      throw new Error(`Cannot dispatch case ${caseId}: No recommendation generated.`);
     }
+
+    // Determine target hospital ID
+    let targetHospitalId = options?.targetHospitalId;
+    if (!targetHospitalId) {
+      targetHospitalId = rec.hospitalA?.hospitalId || rec.hospitalB?.hospitalId;
+    }
+    if (!targetHospitalId) {
+      throw new Error(`Cannot dispatch case ${caseId}: No eligible destination recommendation available.`);
+    }
+
+    const targetHosp = this.hospitals.get(targetHospitalId);
+    if (!targetHosp) {
+      throw new Error(`Target hospital not found: ${targetHospitalId}`);
+    }
+
+    // Determine Care Objective
+    const careObjective: CareObjective =
+      options?.careObjective ||
+      (targetHospitalId === rec.hospitalA?.hospitalId ? 'FULL_CARE' : 'STABILIZATION');
 
     const now = new Date().toISOString();
     const generation = emergencyCase.destinationVersion + 1;
@@ -530,12 +558,13 @@ class GoldenHourDatabaseStore {
 
     const createdRequests: HospitalRequestDto[] = [];
 
-    // 1. Create Main Request for Hospital A
+    // 1. Create Main Request for Target Hospital
     const mainReq: HospitalRequestDto = {
       id: `req-main-${caseId}-gen${generation}`,
       caseId,
-      hospitalId: rec.hospitalA.hospitalId,
+      hospitalId: targetHospitalId,
       role: RequestRole.MAIN,
+      careObjective,
       status: RequestStatus.PENDING,
       destinationGeneration: generation,
       expiresAt,
@@ -545,44 +574,49 @@ class GoldenHourDatabaseStore {
     this.hospitalRequests.set(mainReq.id, mainReq);
     createdRequests.push(mainReq);
 
-    // 2. Create Standby Request for Hospital B
-    if (rec.hospitalB) {
-      const standbyReqB: HospitalRequestDto = {
-        id: `req-sb-b-${caseId}-gen${generation}`,
+    // 2. Create Standby Requests ONLY for distinct eligible alternatives
+    const standbyCandidates: { hospitalId: string }[] = [];
+    if (rec.hospitalA && rec.hospitalA.hospitalId !== targetHospitalId) {
+      standbyCandidates.push({ hospitalId: rec.hospitalA.hospitalId });
+    }
+    if (
+      rec.hospitalB &&
+      rec.hospitalB.hospitalId !== targetHospitalId &&
+      !standbyCandidates.some((s) => s.hospitalId === rec.hospitalB!.hospitalId)
+    ) {
+      standbyCandidates.push({ hospitalId: rec.hospitalB.hospitalId });
+    }
+    if (
+      rec.hospitalC &&
+      rec.hospitalC.hospitalId !== targetHospitalId &&
+      !standbyCandidates.some((s) => s.hospitalId === rec.hospitalC!.hospitalId)
+    ) {
+      standbyCandidates.push({ hospitalId: rec.hospitalC.hospitalId });
+    }
+
+    for (let i = 0; i < standbyCandidates.length; i++) {
+      const sbCandidate = standbyCandidates[i];
+      const standbyReq: HospitalRequestDto = {
+        id: `req-sb-${i === 0 ? 'b' : 'c'}-${caseId}-gen${generation}`,
         caseId,
-        hospitalId: rec.hospitalB.hospitalId,
+        hospitalId: sbCandidate.hospitalId,
         role: RequestRole.STANDBY,
+        careObjective: 'STABILIZATION',
         status: RequestStatus.PENDING,
         destinationGeneration: generation,
         expiresAt,
         respondedAt: null,
         createdAt: now,
       };
-      this.hospitalRequests.set(standbyReqB.id, standbyReqB);
-      createdRequests.push(standbyReqB);
+      this.hospitalRequests.set(standbyReq.id, standbyReq);
+      createdRequests.push(standbyReq);
     }
 
-    // 3. Create Standby Request for Hospital C
-    if (rec.hospitalC) {
-      const standbyReqC: HospitalRequestDto = {
-        id: `req-sb-c-${caseId}-gen${generation}`,
-        caseId,
-        hospitalId: rec.hospitalC.hospitalId,
-        role: RequestRole.STANDBY,
-        status: RequestStatus.PENDING,
-        destinationGeneration: generation,
-        expiresAt,
-        respondedAt: null,
-        createdAt: now,
-      };
-      this.hospitalRequests.set(standbyReqC.id, standbyReqC);
-      createdRequests.push(standbyReqC);
-    }
-
-    // 4. Update Destination Record
+    // 3. Update Destination Record
     const destination: DestinationDto = {
       caseId,
-      hospitalId: rec.hospitalA.hospitalId,
+      hospitalId: targetHospitalId,
+      careObjective,
       readiness: DestinationReadiness.PENDING,
       version: generation,
       selectedBy: DestinationActor.CLINICIAN,
@@ -590,10 +624,10 @@ class GoldenHourDatabaseStore {
     };
     this.destinations.set(caseId, destination);
 
-    // 5. Update Case State
+    // 4. Update Case State
     emergencyCase.caseStatus = CaseStatus.DISPATCHING;
     emergencyCase.destinationVersion = generation;
-    emergencyCase.selectedHospitalId = rec.hospitalA.hospitalId;
+    emergencyCase.selectedHospitalId = targetHospitalId;
     emergencyCase.updatedAt = now;
     this.cases.set(caseId, emergencyCase);
 
@@ -605,7 +639,11 @@ class GoldenHourDatabaseStore {
       entityId: caseId,
       details: {
         destinationGeneration: generation,
-        hospitalA: rec.hospitalA.code,
+        targetHospital: targetHosp.code,
+        careObjective,
+        selectionReason:
+          options?.selectionReason ||
+          (careObjective === 'FULL_CARE' ? 'INITIAL_FULL_CARE' : 'NO_FULL_CARE_AVAILABLE'),
         requestsCount: createdRequests.length,
       },
     });
@@ -675,6 +713,18 @@ class GoldenHourDatabaseStore {
       throw new Error(`Case not found: ${caseId}`);
     }
 
+    if (
+      emergencyCase.caseStatus === CaseStatus.ARRIVED ||
+      emergencyCase.caseStatus === CaseStatus.HANDED_OVER ||
+      emergencyCase.caseStatus === CaseStatus.CLOSED
+    ) {
+      throw new Error(`Cannot divert case ${caseId} in terminal/arrived state (${emergencyCase.caseStatus}).`);
+    }
+
+    if (emergencyCase.selectedHospitalId === targetHospitalId) {
+      throw new Error(`Cannot divert to current destination: target hospital is already ${targetHospitalId}.`);
+    }
+
     if (emergencyCase.destinationVersion !== expectedDestinationVersion) {
       throw new Error(
         `Version conflict on diversion: Expected destination generation ${expectedDestinationVersion}, but current is ${emergencyCase.destinationVersion}`
@@ -684,6 +734,8 @@ class GoldenHourDatabaseStore {
     const now = new Date().toISOString();
     const nextGen = emergencyCase.destinationVersion + 1;
     const oldHospitalId = emergencyCase.selectedHospitalId;
+    const oldHospital = oldHospitalId ? this.hospitals.get(oldHospitalId) : null;
+    const newHospital = this.hospitals.get(targetHospitalId);
 
     // 1. Cancel previous pending/main requests for this case
     for (const [reqId, req] of this.hospitalRequests.entries()) {
@@ -728,6 +780,7 @@ class GoldenHourDatabaseStore {
     const destination: DestinationDto = {
       caseId,
       hospitalId: targetHospitalId,
+      careObjective: 'STABILIZATION',
       readiness: DestinationReadiness.PENDING,
       version: nextGen,
       selectedBy: DestinationActor.CLINICIAN,
@@ -742,6 +795,7 @@ class GoldenHourDatabaseStore {
       caseId,
       hospitalId: targetHospitalId,
       role: RequestRole.MAIN,
+      careObjective: 'STABILIZATION',
       status: RequestStatus.PENDING,
       destinationGeneration: nextGen,
       expiresAt,
@@ -765,7 +819,9 @@ class GoldenHourDatabaseStore {
       entityId: caseId,
       details: {
         oldHospitalId,
+        oldHospitalName: oldHospital?.name || 'Previous Destination',
         newHospitalId: targetHospitalId,
+        newHospitalName: newHospital?.name || targetHospitalId,
         generation: nextGen,
         reason,
         releasedAllocationsCount: releasedAllocations.length,
@@ -1009,9 +1065,7 @@ class GoldenHourDatabaseStore {
     const assessment = this.getLatestAssessment(request.caseId);
     const targetHospital = this.hospitals.get(request.hospitalId);
 
-    // If target hospital has all full-care capabilities, allocate full-care needs;
-    // otherwise if this hospital was selected for immediate stabilization (e.g. diversion to Backup B),
-    // allocate confirmed stabilization needs.
+    // Allocate based on the explicit careObjective persisted on the request!
     const isFullCareFacility =
       targetHospital &&
       assessment?.confirmedFullCareNeeds &&
@@ -1020,9 +1074,14 @@ class GoldenHourDatabaseStore {
         targetHospital.capabilities.includes(need)
       );
 
-    const activeNeeds = isFullCareFacility
-      ? assessment?.confirmedFullCareNeeds || []
-      : assessment?.confirmedStabilizationNeeds || [];
+    const activeNeeds =
+      request.careObjective === 'STABILIZATION'
+        ? assessment?.confirmedStabilizationNeeds || []
+        : request.careObjective === 'FULL_CARE'
+        ? assessment?.confirmedFullCareNeeds || []
+        : isFullCareFacility
+        ? assessment?.confirmedFullCareNeeds || []
+        : assessment?.confirmedStabilizationNeeds || [];
 
     // Determine required resource types and staff specialties
     const neededResourceTypes: ResourceType[] = [];

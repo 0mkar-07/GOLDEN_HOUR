@@ -2,15 +2,30 @@ import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import {
   UserRole,
   DivertCaseRequestSchema,
+  DispatchCaseRequestSchema,
   UpdateAllocationStateRequestSchema,
+  DiversionPreviewDto,
+  DiversionComparisonDto,
+  ReceivingStatus,
+  ResourceType,
+  CaseStatus,
 } from '@goldenhour/contracts';
 import { store } from '../../db/store.js';
 import { requireAuth, requireHospitalOwnership } from '../auth/plugin.js';
 import { emitRealtimeEvent } from '../realtime/index.js';
+import { routingProvider } from '../routing/index.js';
 
 interface IdParams {
   id: string;
 }
+
+const HOSPITAL_NODE_MAP: Record<string, string> = {
+  'hosp-001': 'node-hosp-a',
+  'hosp-002': 'node-hosp-b',
+  'hosp-003': 'node-hosp-c',
+  'hosp-004': 'node-hosp-d',
+  'hosp-005': 'node-hosp-e',
+};
 
 export async function registerDispatchRoutes(fastify: FastifyInstance) {
   // 1. Dispatch Case (Ambulance initiates)
@@ -19,7 +34,12 @@ export async function registerDispatchRoutes(fastify: FastifyInstance) {
     { preHandler: [requireAuth] },
     async (req, reply: FastifyReply) => {
       try {
-        const result = store.dispatchCase(req.params.id, req.user!.id);
+        const body = req.body as any;
+        const result = store.dispatchCase(req.params.id, req.user!.id, {
+          targetHospitalId: body?.targetHospitalId,
+          careObjective: body?.careObjective,
+          selectionReason: body?.selectionReason,
+        });
 
         // Broadcast real-time events to all interested rooms
         emitRealtimeEvent('case.updated', result.case.id, result.case);
@@ -157,6 +177,214 @@ export async function registerDispatchRoutes(fastify: FastifyInstance) {
       const destination = store.getDestination(req.params.id) || null;
       const allocations = store.listAllocationsByCase(req.params.id);
       return reply.status(200).send({ destination, allocations });
+    }
+  );
+
+  // 5b. In-Transit Deterioration Diversion Preview
+  fastify.post<{ Params: IdParams }>(
+    '/api/v1/cases/:id/diversion-preview',
+    { preHandler: [requireAuth] },
+    async (req, reply: FastifyReply) => {
+      const emergencyCase = store.getCase(req.params.id);
+      if (!emergencyCase) {
+        return reply.status(404).send({
+          code: 'NOT_FOUND',
+          message: `Case not found: ${req.params.id}`,
+        });
+      }
+
+      if (
+        emergencyCase.caseStatus === CaseStatus.ARRIVED ||
+        emergencyCase.caseStatus === CaseStatus.HANDED_OVER ||
+        emergencyCase.caseStatus === CaseStatus.CLOSED
+      ) {
+        return reply.status(400).send({
+          code: 'DIVERSION_NOT_ALLOWED',
+          message: `Cannot preview diversion for case in terminal/arrived state (${emergencyCase.caseStatus}).`,
+        });
+      }
+
+      const assessment = store.getLatestAssessment(req.params.id);
+      const confirmedStabNeeds = assessment?.confirmedStabilizationNeeds || ['STABILIZATION', 'BASIC_OXYGEN'];
+      const confirmedFullNeeds = assessment?.confirmedFullCareNeeds || [];
+
+      const currentDestination = store.getDestination(req.params.id);
+      const currentDestHospId = currentDestination?.hospitalId || emergencyCase.selectedHospitalId || null;
+
+      const pos = store.ambulancePosition;
+      const fromNode = routingProvider.findClosestNode(pos.x, pos.y);
+
+      // Current destination ETA context
+      let currentDestinationEtaSeconds: number | null = null;
+      if (currentDestHospId) {
+        const destNodeId = HOSPITAL_NODE_MAP[currentDestHospId] || 'node-hosp-a';
+        try {
+          const currentRoute = routingProvider.calculateRoute(fromNode.id, destNodeId, store.trafficOverrides);
+          currentDestinationEtaSeconds = currentRoute.travelSeconds;
+        } catch {
+          currentDestinationEtaSeconds = null;
+        }
+      }
+
+      const candidates: DiversionComparisonDto[] = [];
+      const allHospitals = store.listHospitals();
+
+      for (const hosp of allHospitals) {
+        // Exclude current destination from diversion candidates
+        if (hosp.id === currentDestHospId) continue;
+
+        const toNodeId = HOSPITAL_NODE_MAP[hosp.id] || 'node-hosp-a';
+        let travelSeconds = 9999;
+        let routingSource = 'SIMULATED_GRAPH';
+        try {
+          const route = routingProvider.calculateRoute(fromNode.id, toNodeId, store.trafficOverrides);
+          travelSeconds = route.travelSeconds;
+          routingSource = route.routingSource || 'SIMULATED_GRAPH';
+        } catch {
+          travelSeconds = 9999;
+        }
+
+        // Check Receiving Status
+        if (hosp.receivingStatus === ReceivingStatus.DIVERT_ALL) {
+          candidates.push({
+            hospitalId: hosp.id,
+            code: hosp.code,
+            name: hosp.name,
+            role: 'BACKUP_B',
+            travelSeconds,
+            receivingDelaySeconds: hosp.receivingDelaySeconds,
+            timeToCareSeconds: travelSeconds + hosp.receivingDelaySeconds,
+            eligible: false,
+            rejectionReason: 'Complete intake divert (DIVERT_ALL) in effect.',
+            routingSource,
+            limitations: ['Facility not accepting emergency patients.'],
+          });
+          continue;
+        }
+
+        // Check Stabilization Capabilities
+        const missingStabCaps = confirmedStabNeeds.filter((need) => !hosp.capabilities.includes(need));
+        if (missingStabCaps.length > 0) {
+          candidates.push({
+            hospitalId: hosp.id,
+            code: hosp.code,
+            name: hosp.name,
+            role: 'BACKUP_B',
+            travelSeconds,
+            receivingDelaySeconds: hosp.receivingDelaySeconds,
+            timeToCareSeconds: travelSeconds + hosp.receivingDelaySeconds,
+            eligible: false,
+            rejectionReason: `Missing required stabilization capabilities: ${missingStabCaps.join(', ')}`,
+            routingSource,
+            limitations: [`Lacks ${missingStabCaps.join(', ')}`],
+          });
+          continue;
+        }
+
+        // Check Resource Availability for Stabilization
+        const pools = store.listResourcePoolsByHospital(hosp.id);
+        let resourceBlockedReason: string | null = null;
+        if (confirmedStabNeeds.includes('TRAUMA_BAY') || confirmedStabNeeds.includes('STABILIZATION')) {
+          const tbPool = pools.find((p) => p.resourceType === ResourceType.TRAUMA_BAY);
+          if (tbPool && tbPool.availableCount <= 0) {
+            resourceBlockedReason = 'Zero allocatable trauma stabilization bays available.';
+          }
+        }
+        if (confirmedStabNeeds.includes('VENTILATORS')) {
+          const vPool = pools.find((p) => p.resourceType === ResourceType.VENTILATOR);
+          if (vPool && vPool.availableCount <= 0) {
+            resourceBlockedReason = 'Zero allocatable ventilators available in stabilization inventory.';
+          }
+        }
+
+        if (resourceBlockedReason) {
+          candidates.push({
+            hospitalId: hosp.id,
+            code: hosp.code,
+            name: hosp.name,
+            role: 'BACKUP_B',
+            travelSeconds,
+            receivingDelaySeconds: hosp.receivingDelaySeconds,
+            timeToCareSeconds: travelSeconds + hosp.receivingDelaySeconds,
+            eligible: false,
+            rejectionReason: resourceBlockedReason,
+            routingSource,
+            limitations: [resourceBlockedReason],
+          });
+          continue;
+        }
+
+        if (travelSeconds >= 9999) {
+          candidates.push({
+            hospitalId: hosp.id,
+            code: hosp.code,
+            name: hosp.name,
+            role: 'BACKUP_B',
+            travelSeconds,
+            receivingDelaySeconds: hosp.receivingDelaySeconds,
+            timeToCareSeconds: travelSeconds + hosp.receivingDelaySeconds,
+            eligible: false,
+            rejectionReason: 'Reachable route unavailable over road network.',
+            routingSource,
+            limitations: ['Network unreachable'],
+          });
+          continue;
+        }
+
+        // Eligible stabilization facility!
+        const missingFullCaps = confirmedFullNeeds.filter((need) => !hosp.capabilities.includes(need));
+        const limitations =
+          missingFullCaps.length > 0
+            ? [`Full-care requirements not available here: ${missingFullCaps.join(', ')}`]
+            : [];
+
+        candidates.push({
+          hospitalId: hosp.id,
+          code: hosp.code,
+          name: hosp.name,
+          role: 'BACKUP_B',
+          travelSeconds,
+          receivingDelaySeconds: hosp.receivingDelaySeconds,
+          timeToCareSeconds: travelSeconds + hosp.receivingDelaySeconds,
+          eligible: true,
+          routingSource,
+          limitations,
+        });
+      }
+
+      // Sort candidates: eligible first by road ETA (travelSeconds), then timeToCare, then ID
+      candidates.sort((a, b) => {
+        if (a.eligible && !b.eligible) return -1;
+        if (!a.eligible && b.eligible) return 1;
+        if (a.eligible && b.eligible) {
+          return (
+            a.travelSeconds - b.travelSeconds ||
+            a.timeToCareSeconds - b.timeToCareSeconds ||
+            a.hospitalId.localeCompare(b.hospitalId)
+          );
+        }
+        return a.travelSeconds - b.travelSeconds;
+      });
+
+      // Assign roles: top eligible gets BACKUP_B, next gets BACKUP_C
+      const eligibleList = candidates.filter((c) => c.eligible);
+      if (eligibleList.length > 0) eligibleList[0].role = 'BACKUP_B';
+      if (eligibleList.length > 1) eligibleList[1].role = 'BACKUP_C';
+
+      const suggestedTargetHospitalId = eligibleList.length > 0 ? eligibleList[0].hospitalId : null;
+
+      const preview: DiversionPreviewDto = {
+        previewId: `prev-${req.params.id}-${Date.now()}`,
+        caseId: req.params.id,
+        currentDestinationHospitalId: currentDestHospId,
+        currentDestinationEtaSeconds,
+        suggestedTargetHospitalId,
+        candidates,
+        generatedAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
+      };
+
+      return reply.status(200).send({ preview });
     }
   );
 

@@ -6,6 +6,7 @@ import {
   DestinationReadiness,
   DestinationActor,
 } from './enums.js';
+import { CareObjectiveEnum, type CareObjective } from './recommendation.js';
 
 export const VitalSignsSchema = z.object({
   heartRate: z.number().nullable().optional(),
@@ -91,19 +92,61 @@ export const Agent1ProposalSchema = z.object({
 
 export type Agent1Proposal = z.infer<typeof Agent1ProposalSchema>;
 
+export const DispatchCaseRequestSchema = z.object({
+  targetHospitalId: z.string().optional(),
+  careObjective: CareObjectiveEnum.optional().default('FULL_CARE'),
+  selectionReason: z.string().optional(),
+  assessmentVersion: z.number().int().positive().optional(),
+  idempotencyKey: z.string().optional(),
+});
+
+export type DispatchCaseRequest = z.infer<typeof DispatchCaseRequestSchema>;
+
 export const DivertCaseRequestSchema = z.object({
   targetHospitalId: z.string().min(1),
   expectedDestinationVersion: z.number().int().positive(),
   reason: z.string().min(1),
+  previewId: z.string().optional(),
+  careObjective: CareObjectiveEnum.optional().default('STABILIZATION'),
 });
 
 export type DivertCaseRequest = z.infer<typeof DivertCaseRequestSchema>;
+
+export const DiversionComparisonSchema = z.object({
+  hospitalId: z.string(),
+  code: z.string(),
+  name: z.string(),
+  role: z.enum(['PRIMARY_A', 'BACKUP_B', 'BACKUP_C']),
+  travelSeconds: z.number().int().nonnegative(),
+  receivingDelaySeconds: z.number().int().nonnegative(),
+  timeToCareSeconds: z.number().int().nonnegative(),
+  eligible: z.boolean(),
+  rejectionReason: z.string().optional(),
+  routingSource: z.string().optional(),
+  limitations: z.array(z.string()).default([]),
+});
+
+export type DiversionComparisonDto = z.infer<typeof DiversionComparisonSchema>;
+
+export const DiversionPreviewSchema = z.object({
+  previewId: z.string(),
+  caseId: z.string(),
+  currentDestinationHospitalId: z.string().nullable().optional(),
+  currentDestinationEtaSeconds: z.number().nullable().optional(),
+  suggestedTargetHospitalId: z.string().nullable().optional(),
+  candidates: z.array(DiversionComparisonSchema),
+  generatedAt: z.string(),
+  expiresAt: z.string(),
+});
+
+export type DiversionPreviewDto = z.infer<typeof DiversionPreviewSchema>;
 
 export const HospitalRequestSchema = z.object({
   id: z.string(),
   caseId: z.string(),
   hospitalId: z.string(),
   role: z.nativeEnum(RequestRole),
+  careObjective: CareObjectiveEnum.optional(),
   status: z.nativeEnum(RequestStatus),
   destinationGeneration: z.number().int().positive(),
   expiresAt: z.string(),
@@ -116,6 +159,7 @@ export type HospitalRequestDto = z.infer<typeof HospitalRequestSchema>;
 export const DestinationSchema = z.object({
   caseId: z.string(),
   hospitalId: z.string(),
+  careObjective: CareObjectiveEnum.optional(),
   readiness: z.nativeEnum(DestinationReadiness),
   version: z.number().int().positive(),
   selectedBy: z.nativeEnum(DestinationActor),

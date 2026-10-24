@@ -244,7 +244,8 @@ export async function registerCaseRoutes(fastify: FastifyInstance) {
           assessment.observations.presentingIssue,
           ranking.hospitalA,
           ranking.hospitalB,
-          ranking.hospitalC
+          ranking.hospitalC,
+          ranking.recommendationMode
         );
       } catch {
         // Standby
@@ -256,6 +257,8 @@ export async function registerCaseRoutes(fastify: FastifyInstance) {
         assessmentVersion: assessment.version,
         positionSequence: store.ambulancePosition.serverSequence,
         inventoryVersion: 1,
+        recommendationMode: ranking.recommendationMode,
+        priorityCandidates: ranking.priorityCandidates,
         hospitalA: ranking.hospitalA,
         hospitalB: ranking.hospitalB,
         hospitalC: ranking.hospitalC,
