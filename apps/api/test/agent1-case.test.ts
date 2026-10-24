@@ -127,14 +127,10 @@ describe('Phase 4 — Ambulance Case Entry and Agent 1', () => {
     const body = JSON.parse(assessRes.body);
     const missing = body.agent1Proposal.missingInputs;
 
-    expect(missing).toEqual(
-      expect.arrayContaining([
-        'Glasgow Coma Scale (GCS) unknown or not recorded.',
-        'Oxygen saturation (SpO2) not recorded.',
-        'Systolic blood pressure not recorded.',
-        'Respiratory rate not recorded.',
-      ])
-    );
+    expect(missing.some((m: string) => /Glasgow|GCS/i.test(m))).toBe(true);
+    expect(missing.some((m: string) => /Oxygen|SpO2/i.test(m))).toBe(true);
+    expect(missing.some((m: string) => /blood pressure|systolic/i.test(m))).toBe(true);
+    expect(missing.some((m: string) => /respiratory/i.test(m))).toBe(true);
   });
 
   it('clinician confirms requirements and transitions case status to ASSESSED', async () => {

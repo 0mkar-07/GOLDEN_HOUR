@@ -7,3 +7,4 @@ export * from './case.js';
 export * from './recommendation.js';
 export * from './audit.js';
 export * from './simulation.js';
+export * from './admin.js';

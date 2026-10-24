@@ -21,6 +21,11 @@ import {
   DestinationReadiness,
   DestinationActor,
   SpecialtyType,
+  SystemSettingsDto,
+  AuditFilterQueryDto,
+  AdminOverviewDto,
+  AdminHospitalUpdateDto,
+  ReceivingStatus,
 } from '@goldenhour/contracts';
 import {
   SEEDED_HOSPITALS,
@@ -71,6 +76,11 @@ class GoldenHourDatabaseStore {
     simulatedSeconds: 0,
     scenarioStep: 'INITIAL',
     updatedAt: new Date().toISOString(),
+  };
+  public systemSettings: SystemSettingsDto = {
+    demoRefreshIntervalSeconds: 5,
+    stalenessThresholdSeconds: 15,
+    rankingImprovementMarginSeconds: 120,
   };
 
   private seeded = false;
@@ -1122,6 +1132,287 @@ class GoldenHourDatabaseStore {
     };
     this.auditEvents.push(audit);
     return audit;
+  }
+
+  // --- Admin Operations (Phase 9) ---
+  public getAdminOverview(): AdminOverviewDto {
+    // 1. Cases summary
+    const allCases = Array.from(this.cases.values());
+    const casesByStatus: Record<string, number> = {
+      [CaseStatus.DRAFT]: 0,
+      [CaseStatus.ASSESSED]: 0,
+      [CaseStatus.DISPATCHING]: 0,
+      [CaseStatus.EN_ROUTE]: 0,
+      [CaseStatus.ARRIVED]: 0,
+      [CaseStatus.HANDED_OVER]: 0,
+      [CaseStatus.CLOSED]: 0,
+      [CaseStatus.CANCELED]: 0,
+    };
+
+    let activeCasesCount = 0;
+    for (const c of allCases) {
+      casesByStatus[c.caseStatus] = (casesByStatus[c.caseStatus] || 0) + 1;
+      if (c.caseStatus !== CaseStatus.CLOSED && c.caseStatus !== CaseStatus.CANCELED) {
+        activeCasesCount++;
+      }
+    }
+
+    // 2. Hospital readiness & aggregate resource metrics
+    let totalAll = 0;
+    let availableAll = 0;
+    let reservedAll = 0;
+    let inUseAll = 0;
+    let outOfServiceAll = 0;
+
+    const hospitalReadiness = Array.from(this.hospitals.values()).map((hosp) => {
+      const pools = this.listResourcePoolsByHospital(hosp.id);
+      let hospTotal = 0;
+      let hospAvail = 0;
+      let hospRes = 0;
+      let hospInUse = 0;
+      let hospOos = 0;
+
+      for (const p of pools) {
+        hospTotal += p.totalCount;
+        hospAvail += p.availableCount;
+        hospRes += p.reservedCount;
+        hospInUse += p.inUseCount;
+        hospOos += p.outOfServiceCount;
+      }
+
+      totalAll += hospTotal;
+      availableAll += hospAvail;
+      reservedAll += hospRes;
+      inUseAll += hospInUse;
+      outOfServiceAll += hospOos;
+
+      const util = hospTotal > 0 ? Math.round(((hospRes + hospInUse) / hospTotal) * 100) : 0;
+
+      return {
+        id: hosp.id,
+        name: hosp.name,
+        code: hosp.code,
+        receivingStatus: hosp.receivingStatus,
+        receivingDelaySeconds: hosp.receivingDelaySeconds,
+        resourceUtilizationPercent: util,
+        availableCount: hospAvail,
+        reservedCount: hospRes,
+        inUseCount: hospInUse,
+        outOfServiceCount: hospOos,
+        totalResources: hospTotal,
+        capabilities: hosp.capabilities,
+      };
+    });
+
+    // 3. Pending requests
+    const pendingRequestsCount = Array.from(this.hospitalRequests.values()).filter(
+      (r) => r.status === RequestStatus.PENDING
+    ).length;
+
+    // 4. Ambulance Telemetry & Staleness
+    const nowMs = Date.now();
+    const observedMs = new Date(this.ambulancePosition.observedAt).getTime();
+    const stalenessSeconds = Math.max(0, Math.round((nowMs - observedMs) / 1000));
+    const isStale = stalenessSeconds > this.systemSettings.stalenessThresholdSeconds;
+
+    return {
+      activeCasesCount,
+      casesByStatus,
+      hospitalReadiness,
+      totalResources: {
+        total: totalAll,
+        available: availableAll,
+        reserved: reservedAll,
+        inUse: inUseAll,
+        outOfService: outOfServiceAll,
+      },
+      pendingRequestsCount,
+      ambulanceTelemetry: {
+        position: {
+          x: this.ambulancePosition.x,
+          y: this.ambulancePosition.y,
+          lat: this.ambulancePosition.lat,
+          lng: this.ambulancePosition.lng,
+        },
+        speed: this.ambulancePosition.speed,
+        heading: this.ambulancePosition.heading,
+        serverSequence: this.ambulancePosition.serverSequence,
+        observedAt: this.ambulancePosition.observedAt,
+        isStale,
+        stalenessSeconds,
+      },
+      systemSettings: this.systemSettings,
+    };
+  }
+
+  public getFilteredAuditLogs(query: AuditFilterQueryDto): AuditEventDto[] {
+    let logs = [...this.auditEvents];
+
+    if (query.caseId) {
+      logs = logs.filter((e) => {
+        if (e.entityId === query.caseId) return true;
+        if (e.details?.caseId === query.caseId) return true;
+        if (e.details?.case?.id === query.caseId) return true;
+        if (e.entityType === 'ALLOCATION') {
+          const alloc = this.allocations.get(e.entityId);
+          if (alloc && alloc.caseId === query.caseId) return true;
+        }
+        if (e.entityType === 'HOSPITAL_REQUEST') {
+          const req = this.hospitalRequests.get(e.entityId);
+          if (req && req.caseId === query.caseId) return true;
+        }
+        if (e.entityType === 'ASSESSMENT') {
+          const assess = this.assessments.get(e.entityId);
+          if (assess && assess.caseId === query.caseId) return true;
+        }
+        return false;
+      });
+    }
+
+    if (query.hospitalId) {
+      logs = logs.filter((e) => {
+        if (e.entityId === query.hospitalId) return true;
+        if (e.details?.hospitalId === query.hospitalId) return true;
+        if (e.details?.oldHospitalId === query.hospitalId || e.details?.newHospitalId === query.hospitalId) return true;
+        if (e.entityType === 'ALLOCATION') {
+          const alloc = this.allocations.get(e.entityId);
+          if (alloc && alloc.hospitalId === query.hospitalId) return true;
+        }
+        if (e.entityType === 'HOSPITAL_REQUEST') {
+          const req = this.hospitalRequests.get(e.entityId);
+          if (req && req.hospitalId === query.hospitalId) return true;
+        }
+        return false;
+      });
+    }
+
+    if (query.action) {
+      const actLower = query.action.toLowerCase();
+      logs = logs.filter((e) => e.action.toLowerCase().includes(actLower));
+    }
+
+    if (query.since) {
+      const sinceDate = new Date(query.since).getTime();
+      logs = logs.filter((e) => new Date(e.timestamp).getTime() >= sinceDate);
+    }
+
+    // Sort descending by timestamp
+    logs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+
+    return logs.slice(0, query.limit || 50);
+  }
+
+  public updateSystemSettings(
+    newSettings: Partial<SystemSettingsDto>,
+    actorUserId: string
+  ): SystemSettingsDto {
+    const previous = { ...this.systemSettings };
+    this.systemSettings = {
+      ...this.systemSettings,
+      ...newSettings,
+    };
+
+    this.recordAudit({
+      actorId: actorUserId,
+      actorRole: UserRole.ADMIN,
+      action: 'SYSTEM_SETTINGS_UPDATED',
+      entityType: 'SYSTEM_SETTINGS',
+      entityId: 'global',
+      details: {
+        previous,
+        current: this.systemSettings,
+      },
+    });
+
+    this.queueOutbox('settings.updated', 'global', this.systemSettings);
+    return this.systemSettings;
+  }
+
+  public adminUpdateHospital(
+    hospitalId: string,
+    updates: AdminHospitalUpdateDto,
+    actorUserId: string
+  ): HospitalDto {
+    const hosp = this.hospitals.get(hospitalId);
+    if (!hosp) {
+      throw new Error(`Hospital not found: ${hospitalId}`);
+    }
+
+    const previous = {
+      receivingStatus: hosp.receivingStatus,
+      receivingDelaySeconds: hosp.receivingDelaySeconds,
+      capabilities: [...hosp.capabilities],
+    };
+
+    if (updates.receivingStatus !== undefined) {
+      hosp.receivingStatus = updates.receivingStatus;
+    }
+    if (updates.receivingDelaySeconds !== undefined) {
+      hosp.receivingDelaySeconds = updates.receivingDelaySeconds;
+    }
+    if (updates.capabilities !== undefined) {
+      hosp.capabilities = updates.capabilities;
+    }
+
+    hosp.version += 1;
+    hosp.updatedAt = new Date().toISOString();
+    this.hospitals.set(hospitalId, hosp);
+
+    this.recordAudit({
+      actorId: actorUserId,
+      actorRole: UserRole.ADMIN,
+      action: 'ADMIN_HOSPITAL_STATUS_OVERRIDE',
+      entityType: 'HOSPITAL',
+      entityId: hospitalId,
+      details: {
+        previous,
+        updates,
+        newVersion: hosp.version,
+      },
+    });
+
+    this.queueOutbox('hospital.updated', hospitalId, hosp);
+    return hosp;
+  }
+
+  public resetDemoScenario(actorUserId: string): void {
+    // Confirmation-gated reset restricted to synthetic demo dataset
+    this.cases.clear();
+    this.assessments.clear();
+    this.destinations.clear();
+    this.hospitalRequests.clear();
+    this.allocations.clear();
+    this.recommendations.clear();
+    this.clearTrafficOverrides();
+
+    // Reset hospital inventories to baseline
+    this.resourcePools.clear();
+    for (const pool of SEEDED_RESOURCE_POOLS) {
+      this.resourcePools.set(pool.id, { ...pool });
+    }
+
+    // Reset ambulance position
+    this.ambulancePosition = {
+      x: 120,
+      y: 150,
+      lat: 40.71,
+      lng: -74.02,
+      speed: 0,
+      heading: 85,
+      serverSequence: 1,
+      observedAt: new Date().toISOString(),
+    };
+
+    this.recordAudit({
+      actorId: actorUserId,
+      actorRole: UserRole.ADMIN,
+      action: 'DEMO_SCENARIO_RESET',
+      entityType: 'SYSTEM',
+      entityId: 'global',
+      details: { timestamp: new Date().toISOString() },
+    });
+
+    this.queueOutbox('simulation.reset', 'global', { timestamp: new Date().toISOString() });
   }
 }
 

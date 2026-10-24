@@ -20,6 +20,11 @@ import {
   HospitalRequestDto,
   DestinationDto,
   AllocationDto,
+  AdminOverviewDto,
+  AuditEventDto,
+  AuditFilterQueryDto,
+  SystemSettingsDto,
+  AdminHospitalUpdateDto,
 } from '@goldenhour/contracts';
 
 export class ApiError extends Error {
@@ -317,6 +322,61 @@ export const apiClient = {
     return request<{ allocation: AllocationDto }>(`/api/v1/allocations/${allocationId}/release`, {
       method: 'POST',
       body: JSON.stringify(payload),
+    });
+  },
+
+  // Admin API (Phase 9)
+  async getAdminOverview(): Promise<AdminOverviewDto> {
+    return request<AdminOverviewDto>('/api/v1/admin/overview', {
+      method: 'GET',
+    });
+  },
+
+  async getAdminAuditLogs(query?: AuditFilterQueryDto): Promise<{ total: number; logs: AuditEventDto[] }> {
+    const params = new URLSearchParams();
+    if (query?.caseId) params.append('caseId', query.caseId);
+    if (query?.hospitalId) params.append('hospitalId', query.hospitalId);
+    if (query?.action) params.append('action', query.action);
+    if (query?.since) params.append('since', query.since);
+    if (query?.limit) params.append('limit', String(query.limit));
+    const qs = params.toString();
+    return request<{ total: number; logs: AuditEventDto[] }>(`/api/v1/admin/audit-logs${qs ? `?${qs}` : ''}`, {
+      method: 'GET',
+    });
+  },
+
+  async getAdminCases(): Promise<{ cases: any[] }> {
+    return request<{ cases: any[] }>('/api/v1/admin/cases', {
+      method: 'GET',
+    });
+  },
+
+  async getAdminSettings(): Promise<{ settings: SystemSettingsDto }> {
+    return request<{ settings: SystemSettingsDto }>('/api/v1/admin/settings', {
+      method: 'GET',
+    });
+  },
+
+  async updateAdminSettings(settings: SystemSettingsDto): Promise<{ message: string; settings: SystemSettingsDto }> {
+    return request<{ message: string; settings: SystemSettingsDto }>('/api/v1/admin/settings', {
+      method: 'PUT',
+      body: JSON.stringify(settings),
+    });
+  },
+
+  async updateAdminHospitalStatus(
+    id: string,
+    updates: AdminHospitalUpdateDto
+  ): Promise<{ message: string; hospital: HospitalDto }> {
+    return request<{ message: string; hospital: HospitalDto }>(`/api/v1/admin/hospitals/${id}/status`, {
+      method: 'PATCH',
+      body: JSON.stringify(updates),
+    });
+  },
+
+  async resetDemoScenario(): Promise<{ message: string }> {
+    return request<{ message: string }>('/api/v1/admin/reset', {
+      method: 'POST',
     });
   },
 };
