@@ -14,6 +14,9 @@ import {
   SubmitAssessmentRequest,
   ConfirmRequirementsRequest,
   Agent1Proposal,
+  RecommendationDto,
+  RoadGraphDto,
+  AmbulancePositionDto,
 } from '@goldenhour/contracts';
 
 export class ApiError extends Error {
@@ -169,5 +172,31 @@ export const apiClient = {
         body: JSON.stringify(payload),
       }
     );
+  },
+
+  async generateRecommendations(caseId: string): Promise<{ recommendation: RecommendationDto }> {
+    return request<{ recommendation: RecommendationDto }>(`/api/v1/cases/${caseId}/recommendations`, {
+      method: 'POST',
+    });
+  },
+
+  async getRecommendations(caseId: string): Promise<{ recommendation: RecommendationDto | null }> {
+    return request<{ recommendation: RecommendationDto | null }>(`/api/v1/cases/${caseId}/recommendations`, {
+      method: 'GET',
+    });
+  },
+
+  async getRoadGraph(): Promise<{
+    graph: RoadGraphDto;
+    trafficOverrides: Record<string, number>;
+    ambulancePosition: AmbulancePositionDto;
+  }> {
+    return request<{
+      graph: RoadGraphDto;
+      trafficOverrides: Record<string, number>;
+      ambulancePosition: AmbulancePositionDto;
+    }>('/api/v1/routing/graph', {
+      method: 'GET',
+    });
   },
 };

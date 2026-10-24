@@ -1,9 +1,9 @@
 # GoldenHour Implementation Progress
 
 ## Project State
-- **Status:** Phase 4 Complete & Verified
-- **Current Phase:** Phase 4 (Ambulance case entry and Agent 1) Gate PASSED
-- **Next Phase:** Phase 5 (Agent 2, Agent 3, and routing)
+- **Status:** Phase 5 Complete & Verified
+- **Current Phase:** Phase 5 (Agent 2, Agent 3, and routing) Gate PASSED
+- **Next Phase:** Phase 6 (Dispatch, acceptance, and atomic reservations)
 - **Active Spec:** `docs/implementation-plan.md`
 
 ## Milestones Log
@@ -23,39 +23,42 @@
 - Live Hospital command portal with resource bars, staff readiness slots, and receiving status controls.
 
 ### 2026-10-24 — Phase 4: Ambulance Case Entry and Agent 1
-- **Agent 1 Requirements Interpretation Module (`apps/api/src/modules/agents/agent1.ts`):**
-  - Deterministic, versioned rule module (`v1.0.0-deterministic`).
-  - Proposes full-care requirements (for definitive destination A) vs. immediate stabilization requirements (for dynamic backups B/C).
-  - Explicit missing inputs detection: Omitted or unknown vital signs (e.g. unassessed GCS, SpO2, or Blood Pressure) are actively surfaced in `missingInputs` rather than silently assumed normal.
-  - Generates transparent, human-readable clinical rationale.
+- Agent 1 deterministic requirements interpretation (`v1.0.0-deterministic`).
+- Surface explicit missing telemetry in `missingInputs` rather than assuming normal.
+- Case creation and clinician confirmation workflow locking assessment versions.
 
-- **Case Management & Confirmation APIs (`apps/api/src/modules/cases/routes.ts`):**
-  - `POST /api/v1/cases`: Creates case in `DRAFT` status with `assessmentVersion: 0`.
-  - `GET /api/v1/cases/:id`: Fetches case and its latest assessment.
-  - `POST /api/v1/cases/:id/assessments`: Submits observations, runs Agent 1, increments `assessmentVersion`, and stores proposed requirements.
-  - `POST /api/v1/cases/:id/confirm-requirements`: Clinician confirms/modifies full-care and stabilization needs with actor and timestamp; transitions case to `ASSESSED` status.
-  - Stale confirmation submissions return `409 VERSION_CONFLICT`.
+### 2026-10-24 — Phase 5: Agent 2, Agent 3, and Routing
+- **Routing Engine (`apps/api/src/modules/routing/index.ts`):**
+  - Dijkstra shortest path router over the connected synthetic road graph.
+  - Per-edge travel time calculation with traffic multipliers (`edgeTravelSeconds = baseTravelSeconds * trafficMultiplier`).
+  - Strict prohibition of straight-line distance approximations as road ETA.
 
-- **Frontend Ambulance Mobile Terminal (`apps/web/src/pages/AmbulancePage.tsx`):**
-  - Preset loader with 3 clinical scenarios:
-    1. Severe TBI & Polytrauma (High-Speed Collision)
-    2. Acute STEMI / Anterior Wall Infarction
-    3. Incomplete Assessment (Explicit Unknown Vitals)
-  - Telemetry entry with vitals inputs and explicit unknown support.
-  - Agent 1 reasoning card with clinical rationale and missing inputs alert banner.
-  - Clinician tag editor allowing additions/removals before confirming.
-  - One-click clinician confirmation locking assessment version and showing timestamped clinician signature.
+- **Agent 2 — Suitability Filtering (`apps/api/src/modules/agents/agent2.ts`):**
+  - Filters full-care vs. stabilization candidates separately against confirmed clinical requirements.
+  - Verifies physical equipment availability (`availableCount > 0` for ventilators, CT scanners) and specialist surgical readiness (`availableTeamSlots > 0` for neurosurgery, trauma surgery).
+  - Explicitly records reasons and missing capabilities for ineligible facilities.
+
+- **Agent 3 — Time & Coordination Ranking (`apps/api/src/modules/agents/agent3.ts`):**
+  - Implements the exact time-to-care equation:
+    $$\text{arrival\_at} = \text{now} + \text{route\_travel\_seconds}$$
+    $$\text{care\_start\_at} = \max(\text{arrival\_at}, \text{resource\_ready\_at}) + \text{receiving\_delay\_seconds}$$
+    $$\text{time\_to\_care\_seconds} = \text{care\_start\_at} - \text{now}$$
+  - Nominates **Hospital A (Primary Destination)**: Lowest time-to-care among eligible full-care facilities.
+  - Nominates **Hospitals B & C (Dynamic Stabilization Backups)**: Evaluated dynamically from the ambulance's **current position** for urgent stabilization.
+
+- **Frontend Destination Panel & SVG Road Transit Map:**
+  - Added [`RecommendationPanel.tsx`](file:///c:/Users/Hp/OneDrive/Desktop/golden%20hour%202/apps/web/src/components/RecommendationPanel.tsx) with Primary A and Backups B / C comparison cards and Tri-Agent breakdown.
+  - Added [`RoadNetworkMap.tsx`](file:///c:/Users/Hp/OneDrive/Desktop/golden%20hour%202/apps/web/src/components/RoadNetworkMap.tsx) rendering the city road graph, hospital nodes, live ambulance position, solid primary route ribbon, and dashed standby arcs.
 
 - **Verification Checks:**
   - `pnpm typecheck`: Passed (4/4 projects, 0 errors).
-  - `pnpm test`: Passed (**28/28 tests passing across 7 test suites**).
-  - Backend integration tests (`apps/api/test/agent1-case.test.ts`):
-    - Case creation in `DRAFT`.
-    - Polytrauma / TBI requirement interpretation.
-    - Explicit unknown detection.
-    - Clinician confirmation transitions case to `ASSESSED`.
-    - Stale confirmation rejection (`409 VERSION_CONFLICT`).
-  - Frontend integration tests (`apps/web/src/test/AmbulancePage.test.tsx`):
-    - Case entry form and Agent 1 proposal panel verified.
+  - `pnpm test`: Passed (**35/35 tests passing across 9 test suites**).
+  - Backend integration tests (`apps/api/test/agents2-3-routing.test.ts`):
+    - Dijkstra shortest path accurately calculates road travel times.
+    - Nearby unsuitable facility (Bayview) loses to farther suitable facility (St. Jude) for Primary A, but is nominated as Backup B.
+    - Traffic multiplier increases road ETA and reflects in recommendation.
+    - Ambulance coordinate movement updates dynamic B/C backup rankings.
+  - Frontend integration tests (`apps/web/src/test/RecommendationPanel.test.tsx`):
+    - Verified Primary A, Backups B/C cards, and Tri-Agent breakdown rendering.
 
-- **Gate Acceptance:** All Phase 4 criteria met. A clinician can create, reload, edit, and confirm a case; Agent 1 never silently treats missing information as normal.
+- **Gate Acceptance:** All Phase 5 criteria met. Seeded scenarios yield predictable results; the UI explains why each option was selected; B/C use the latest position.

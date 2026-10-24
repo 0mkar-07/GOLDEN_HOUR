@@ -22,9 +22,15 @@ import {
   AssessmentDto,
   Agent1Proposal,
   CaseStatus,
+  RecommendationDto,
+  RoadGraphDto,
+  AmbulancePositionDto,
+  HospitalDto,
 } from '@goldenhour/contracts';
 import { apiClient } from '../lib/api-client';
 import { useAuth } from '../context/AuthContext';
+import { RoadNetworkMap } from '../components/RoadNetworkMap';
+import { RecommendationPanel } from '../components/RecommendationPanel';
 
 interface ScenarioPreset {
   name: string;
@@ -101,6 +107,23 @@ export const AmbulancePage: React.FC = () => {
   const [activeCase, setActiveCase] = useState<EmergencyCaseDto | null>(null);
   const [assessment, setAssessment] = useState<AssessmentDto | null>(null);
   const [agent1Proposal, setAgent1Proposal] = useState<Agent1Proposal | null>(null);
+  const [recommendation, setRecommendation] = useState<RecommendationDto | null>(null);
+
+  // Road Graph & Simulation State
+  const [roadGraph, setRoadGraph] = useState<RoadGraphDto | null>(null);
+  const [ambulancePosition, setAmbulancePosition] = useState<AmbulancePositionDto>({
+    ambulanceId: 'amb-104',
+    x: 120,
+    y: 150,
+    lat: 40.71,
+    lng: -74.02,
+    speed: 0,
+    heading: 85,
+    serverSequence: 1,
+    observedAt: new Date().toISOString(),
+  });
+  const [trafficOverrides, setTrafficOverrides] = useState<Record<string, number>>({});
+  const [hospitals, setHospitals] = useState<HospitalDto[]>([]);
 
   // Form State
   const [patientLabel, setPatientLabel] = useState<string>('John Doe, 34M — Unrestrained Driver');
@@ -154,6 +177,18 @@ export const AmbulancePage: React.FC = () => {
               ? detail.latestAssessment.confirmedStabilizationNeeds
               : detail.latestAssessment.proposedStabilizationNeeds
           );
+
+          if (detail.latestAssessment.clinicianConfirmed) {
+            // Load existing recommendation
+            try {
+              const recRes = await apiClient.getRecommendations(latest.id);
+              if (recRes.recommendation) {
+                setRecommendation(recRes.recommendation);
+              }
+            } catch {
+              // Standby
+            }
+          }
         }
       }
     } catch (err: any) {
@@ -161,9 +196,43 @@ export const AmbulancePage: React.FC = () => {
     }
   }, []);
 
+  // Load Road Graph & Hospitals
+  const loadMapAndHospitals = useCallback(async () => {
+    try {
+      const [graphRes, hospRes] = await Promise.all([
+        apiClient.getRoadGraph(),
+        apiClient.listHospitals(),
+      ]);
+      setRoadGraph(graphRes.graph);
+      setTrafficOverrides(graphRes.trafficOverrides || {});
+      setAmbulancePosition(graphRes.ambulancePosition);
+      setHospitals(hospRes.hospitals);
+    } catch (err: any) {
+      console.error('Failed to load graph/hospitals:', err);
+    }
+  }, []);
+
   useEffect(() => {
     loadActiveCase();
-  }, [loadActiveCase]);
+    loadMapAndHospitals();
+  }, [loadActiveCase, loadMapAndHospitals]);
+
+  // Generate / Refresh Recommendations
+  const handleGenerateRecommendations = async () => {
+    if (!activeCase) return;
+    try {
+      setLoading(true);
+      setError(null);
+      const res = await apiClient.generateRecommendations(activeCase.id);
+      setRecommendation(res.recommendation);
+      setSuccessMsg('Agent 2 & 3: Recommendations generated with Primary A and Backups B/C.');
+      setTimeout(() => setSuccessMsg(null), 4000);
+    } catch (err: any) {
+      setError(err?.message || 'Failed to generate recommendations');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   // Apply Demo Preset
   const handleApplyPreset = (preset: ScenarioPreset) => {
@@ -280,8 +349,16 @@ export const AmbulancePage: React.FC = () => {
 
       setAssessment(res.assessment);
       setActiveCase((prev) => (prev ? { ...prev, caseStatus: CaseStatus.ASSESSED } : null));
-      setSuccessMsg('Clinical requirements confirmed! Next stage: Destination matching.');
+      setSuccessMsg('Clinical requirements confirmed! Generating A/B/C destination recommendations...');
       setTimeout(() => setSuccessMsg(null), 4000);
+
+      // Auto-trigger Agent 2 & Agent 3 matching
+      try {
+        const recRes = await apiClient.generateRecommendations(activeCase.id);
+        setRecommendation(recRes.recommendation);
+      } catch (recErr: any) {
+        console.warn('Recommendation auto-generation deferred:', recErr?.message);
+      }
     } catch (err: any) {
       setError(err?.message || 'Failed to confirm requirements');
     } finally {
@@ -795,6 +872,24 @@ export const AmbulancePage: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Destination Recommendations Section (Phase 5) */}
+      <RecommendationPanel
+        recommendation={recommendation}
+        loading={loading}
+        onRefresh={handleGenerateRecommendations}
+      />
+
+      {/* Live Road Network Transit Map */}
+      {roadGraph && (
+        <RoadNetworkMap
+          graph={roadGraph}
+          ambulancePosition={ambulancePosition}
+          recommendation={recommendation}
+          hospitals={hospitals}
+          trafficOverrides={trafficOverrides}
+        />
+      )}
     </div>
   );
 };

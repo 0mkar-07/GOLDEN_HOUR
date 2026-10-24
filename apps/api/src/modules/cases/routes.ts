@@ -3,10 +3,15 @@ import {
   CreateCaseRequestSchema,
   SubmitAssessmentRequestSchema,
   ConfirmRequirementsRequestSchema,
+  RecommendationDto,
 } from '@goldenhour/contracts';
 import { store } from '../../db/store.js';
 import { requireAuth } from '../auth/plugin.js';
 import { runAgent1 } from '../agents/agent1.js';
+import { runAgent2 } from '../agents/agent2.js';
+import { runAgent3 } from '../agents/agent3.js';
+import { routingProvider } from '../routing/index.js';
+import { SEEDED_ROAD_GRAPH } from '@goldenhour/scenario-fixtures';
 
 interface IdParams {
   id: string;
@@ -184,6 +189,101 @@ export async function registerCaseRoutes(fastify: FastifyInstance) {
           message: err.message,
         });
       }
+    }
+  );
+
+  // 6. Generate Recommendations (Runs Agent 2 & Agent 3)
+  fastify.post<{ Params: IdParams }>(
+    '/api/v1/cases/:id/recommendations',
+    { preHandler: [requireAuth] },
+    async (req, reply: FastifyReply) => {
+      const emergencyCase = store.getCase(req.params.id);
+      if (!emergencyCase) {
+        return reply.status(404).send({
+          code: 'NOT_FOUND',
+          message: `Case not found: ${req.params.id}`,
+        });
+      }
+
+      const assessment = store.getLatestAssessment(req.params.id);
+      if (!assessment || !assessment.clinicianConfirmed) {
+        return reply.status(400).send({
+          code: 'REQUIREMENTS_UNCONFIRMED',
+          message: 'Clinical requirements must be confirmed by clinician before generating destination recommendations.',
+        });
+      }
+
+      // Run Agent 2: Suitability Filtering
+      const evaluations = runAgent2(
+        assessment.confirmedFullCareNeeds,
+        assessment.confirmedStabilizationNeeds,
+        store.listHospitals(),
+        (id) => store.listResourcePoolsByHospital(id),
+        (id) => store.listStaffByHospital(id)
+      );
+
+      // Run Agent 3: Time Calculation & Dynamic Ranking from Current Position
+      const ranking = runAgent3(
+        req.params.id,
+        assessment.version,
+        store.ambulancePosition,
+        evaluations,
+        routingProvider,
+        store.trafficOverrides
+      );
+
+      const recommendation: RecommendationDto = {
+        id: `rec-${req.params.id}-v${assessment.version}-${Date.now()}`,
+        caseId: req.params.id,
+        assessmentVersion: assessment.version,
+        positionSequence: store.ambulancePosition.serverSequence,
+        inventoryVersion: 1,
+        hospitalA: ranking.hospitalA,
+        hospitalB: ranking.hospitalB,
+        hospitalC: ranking.hospitalC,
+        allCandidates: ranking.allEvaluations,
+        generatedAt: new Date().toISOString(),
+      };
+
+      store.setRecommendation(req.params.id, recommendation);
+
+      store.recordAudit({
+        actorId: req.user!.id,
+        actorRole: req.user!.role,
+        action: 'RECOMMENDATIONS_GENERATED',
+        entityType: 'RECOMMENDATION',
+        entityId: recommendation.id,
+        details: {
+          primaryA: ranking.hospitalA?.code ?? 'NONE',
+          backupB: ranking.hospitalB?.code ?? 'NONE',
+          backupC: ranking.hospitalC?.code ?? 'NONE',
+        },
+      });
+
+      return reply.status(200).send({ recommendation });
+    }
+  );
+
+  // 7. Get Latest Recommendation
+  fastify.get<{ Params: IdParams }>(
+    '/api/v1/cases/:id/recommendations',
+    { preHandler: [requireAuth] },
+    async (req, reply: FastifyReply) => {
+      const recommendation = store.getRecommendation(req.params.id);
+      return reply.status(200).send({ recommendation: recommendation || null });
+    }
+  );
+
+  // 8. Get Road Graph & Live Simulation State
+  fastify.get(
+    '/api/v1/routing/graph',
+    { preHandler: [requireAuth] },
+    async (_req, reply: FastifyReply) => {
+      return reply.status(200).send({
+        graph: SEEDED_ROAD_GRAPH,
+        trafficOverrides: store.trafficOverrides,
+        ambulancePosition: store.ambulancePosition,
+      });
     }
   );
 }

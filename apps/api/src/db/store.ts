@@ -15,6 +15,7 @@ import {
   UserRole,
   ResourceType,
   CaseStatus,
+  RecommendationDto,
 } from '@goldenhour/contracts';
 import {
   SEEDED_HOSPITALS,
@@ -43,6 +44,18 @@ class GoldenHourDatabaseStore {
   public assessments: Map<string, AssessmentDto> = new Map();
   public destinations: Map<string, DestinationDto> = new Map();
   public hospitalRequests: Map<string, HospitalRequestDto> = new Map();
+  public recommendations: Map<string, RecommendationDto> = new Map();
+  public trafficOverrides: Record<string, number> = {};
+  public ambulancePosition = {
+    x: 120,
+    y: 150,
+    lat: 40.71,
+    lng: -74.02,
+    speed: 0,
+    heading: 85,
+    serverSequence: 1,
+    observedAt: new Date().toISOString(),
+  };
   public auditEvents: AuditEventDto[] = [];
   public outboxEvents: OutboxEventDto[] = [];
   public simulationRun: SimulationRunDto = {
@@ -367,6 +380,36 @@ class GoldenHourDatabaseStore {
     this.cases.set(caseId, emergencyCase);
 
     return updatedAssessment;
+  }
+
+  // --- Recommendation & Position Operations ---
+  public setRecommendation(caseId: string, recommendation: RecommendationDto): void {
+    this.recommendations.set(caseId, recommendation);
+  }
+
+  public getRecommendation(caseId: string): RecommendationDto | undefined {
+    return this.recommendations.get(caseId);
+  }
+
+  public updateAmbulancePosition(x: number, y: number, lat: number, lng: number): void {
+    this.ambulancePosition = {
+      x,
+      y,
+      lat,
+      lng,
+      speed: 45,
+      heading: this.ambulancePosition.heading,
+      serverSequence: this.ambulancePosition.serverSequence + 1,
+      observedAt: new Date().toISOString(),
+    };
+  }
+
+  public setTrafficOverride(edgeId: string, multiplier: number): void {
+    this.trafficOverrides[edgeId] = multiplier;
+  }
+
+  public clearTrafficOverrides(): void {
+    this.trafficOverrides = {};
   }
 
   // --- Audit Events ---

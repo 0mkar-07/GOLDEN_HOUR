@@ -74,6 +74,51 @@ global.fetch = vi.fn().mockImplementation((url: string) => {
     });
   }
 
+  if (url.includes('/api/v1/routing/graph')) {
+    return Promise.resolve({
+      ok: true,
+      status: 200,
+      headers: new Headers({ 'content-type': 'application/json' }),
+      json: () =>
+        Promise.resolve({
+          graph: {
+            nodes: [
+              { id: 'node-amb-start', label: 'Scene', x: 120, y: 150, lat: 40.71, lng: -74.02 },
+              { id: 'node-hosp-a', label: 'St Jude', x: 350, y: 150, lat: 40.7128, lng: -74.006 },
+            ],
+            edges: [],
+          },
+          trafficOverrides: {},
+          ambulancePosition: { x: 120, y: 150, lat: 40.71, lng: -74.02, speed: 0, heading: 0, serverSequence: 1, observedAt: new Date().toISOString() },
+        }),
+    });
+  }
+
+  if (url.includes('/api/v1/hospitals')) {
+    return Promise.resolve({
+      ok: true,
+      status: 200,
+      headers: new Headers({ 'content-type': 'application/json' }),
+      json: () =>
+        Promise.resolve({
+          hospitals: [
+            {
+              id: 'hosp-001',
+              code: 'HOSP-A',
+              name: 'St. Jude Metropolitan Trauma Center',
+              address: '100 Central Ave',
+              location: { x: 350, y: 150, lat: 40.7128, lng: -74.006 },
+              capabilities: ['TRAUMA_L1'],
+              receivingStatus: 'OPEN',
+              receivingDelaySeconds: 120,
+              version: 1,
+              updatedAt: new Date().toISOString(),
+            },
+          ],
+        }),
+    });
+  }
+
   return Promise.resolve({
     ok: true,
     status: 200,
