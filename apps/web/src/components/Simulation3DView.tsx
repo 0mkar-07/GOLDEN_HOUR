@@ -42,6 +42,7 @@ export const Simulation3DView: React.FC<Simulation3DViewProps> = ({ activeCaseId
   const [is3DMode, setIs3DMode] = useState<boolean>(true);
   const [cameraView, setCameraView] = useState<'follow' | 'isometric' | 'top'>('isometric');
 
+  const [canvasElement, setCanvasElement] = useState<HTMLCanvasElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const simStateRef = useRef<any>(simState);
   useEffect(() => {
@@ -119,9 +120,9 @@ export const Simulation3DView: React.FC<Simulation3DViewProps> = ({ activeCaseId
   // Genuine Three.js 3D Scene Initialization & Loop
   // -------------------------------------------------------------
   useEffect(() => {
-    if (!is3DMode || !webGLSupported || !canvasRef.current) return;
+    const canvas = canvasElement || canvasRef.current;
+    if (!is3DMode || !webGLSupported || !canvas) return;
 
-    const canvas = canvasRef.current;
     const width = canvas.parentElement?.clientWidth || 800;
     const height = 480;
 
@@ -473,7 +474,7 @@ export const Simulation3DView: React.FC<Simulation3DViewProps> = ({ activeCaseId
       renderer.dispose();
       scene.clear();
     };
-  }, [is3DMode, webGLSupported]);
+  }, [is3DMode, webGLSupported, canvasElement]);
 
   // Simulation Controls
   const handlePlay = async () => {
@@ -700,7 +701,13 @@ export const Simulation3DView: React.FC<Simulation3DViewProps> = ({ activeCaseId
       {/* Main Simulation Viewport (Genuine Three.js 3D Canvas or 2D SVG Fallback) */}
       <div className="relative w-full h-[480px] bg-slate-950 rounded-xl overflow-hidden border border-slate-800 flex items-center justify-center">
         {is3DMode && webGLSupported ? (
-          <canvas ref={canvasRef} className="w-full h-full block cursor-grab active:cursor-grabbing" />
+          <canvas
+            ref={(el) => {
+              canvasRef.current = el;
+              setCanvasElement(el);
+            }}
+            className="w-full h-full block cursor-grab active:cursor-grabbing"
+          />
         ) : (
           /* 2D Fallback SVG Rendering */
           <div className="w-full h-full p-4 relative flex items-center justify-center bg-slate-900">

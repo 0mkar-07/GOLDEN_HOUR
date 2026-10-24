@@ -2,6 +2,7 @@ import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import {
   CreatePriorityReviewRequestSchema,
   DecidePriorityTicketRequestSchema,
+  UserRole,
 } from '@goldenhour/contracts';
 import { store } from '../../db/store.js';
 import { requireAuth } from '../auth/plugin.js';
@@ -119,7 +120,35 @@ export async function registerSchedulingRoutes(fastify: FastifyInstance) {
       }
 
       const { decision, reviewerNotes, alternateTheatreId } = parseResult.data;
-      const reviewerId = (req as any).user?.name || (req as any).user?.email || 'Hospital Medical Director';
+      const user = (req as any).user;
+      const reviewerId = user?.name || user?.email || 'Hospital Medical Director';
+
+      const ticket = store.emergencyPriorityTickets.get(req.params.id);
+      if (!ticket) {
+        return reply.status(404).send({
+          code: 'TICKET_NOT_FOUND',
+          message: `Priority ticket ${req.params.id} not found`,
+        });
+      }
+
+      // Authorization check (F-20 / S-02)
+      if (user?.role === UserRole.AMBULANCE) {
+        return reply.status(403).send({
+          code: 'FORBIDDEN',
+          message: 'Ambulance personnel cannot decide hospital surgical priority tickets',
+        });
+      }
+
+      if (user?.role === UserRole.HOSPITAL) {
+        const userHosp = store.resolveHospitalId(user.hospitalId || '');
+        const ticketHosp = store.resolveHospitalId(ticket.hospitalId);
+        if (userHosp !== ticketHosp) {
+          return reply.status(403).send({
+            code: 'FORBIDDEN',
+            message: 'User does not belong to the hospital managing this surgical priority ticket',
+          });
+        }
+      }
 
       try {
         const result = store.decidePriorityTicket(

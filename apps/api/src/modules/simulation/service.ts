@@ -5,6 +5,7 @@ import {
   CaseStatus,
   DestinationReadiness,
   UserRole,
+  projectToNitkMetric,
 } from '@goldenhour/contracts';
 import { SEEDED_ROAD_GRAPH } from '@goldenhour/scenario-fixtures';
 import { store } from '../../db/store.js';
@@ -121,9 +122,15 @@ class SimulationService {
     this.completed = false;
     this.runVersion += 1;
 
-    // Reset ambulance position to selected scenario origin (or NITK default)
+    // Reset ambulance position to selected scenario origin (or NITK default) (F-13)
     const origin = store.ambulanceOrigin;
-    store.updateAmbulancePosition(120, 150, origin.lat, origin.lng);
+    const metric = projectToNitkMetric(origin.lat, origin.lng);
+    store.updateAmbulancePosition(
+      Math.round(metric.x / 10),
+      Math.round(metric.y / 10),
+      origin.lat,
+      origin.lng
+    );
     this.broadcastSimulationState();
     return this.getSimulationState().simulationRun;
   }
@@ -310,12 +317,13 @@ class SimulationService {
       (c) => c.caseStatus === CaseStatus.EN_ROUTE || c.caseStatus === CaseStatus.DISPATCHING
     );
 
-    let destinationNodeId = 'node-hosp-a'; // Default to St. Jude
+    let destinationNodeId = 'node-hosp-a'; // Default
     if (activeCase && activeCase.selectedHospitalId) {
-      if (activeCase.selectedHospitalId === 'hosp-002') destinationNodeId = 'node-hosp-b';
-      else if (activeCase.selectedHospitalId === 'hosp-003') destinationNodeId = 'node-hosp-c';
-      else if (activeCase.selectedHospitalId === 'hosp-004') destinationNodeId = 'node-hosp-d';
-      else if (activeCase.selectedHospitalId === 'hosp-005') destinationNodeId = 'node-hosp-e';
+      const hosp = store.getHospital(activeCase.selectedHospitalId);
+      if (hosp) {
+        const closestDest = this.routingProvider.findClosestNode(hosp.location.x, hosp.location.y);
+        destinationNodeId = closestDest.id;
+      }
     }
 
     const closestNode = this.routingProvider.findClosestNode(

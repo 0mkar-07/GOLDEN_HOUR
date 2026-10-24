@@ -96,3 +96,46 @@ export const SourceSwitchRequestSchema = z.object({
   expectedSequence: z.number().int().nonnegative().optional(),
 });
 export type SourceSwitchRequest = z.infer<typeof SourceSwitchRequestSchema>;
+
+export const OriginPreviewRequestSchema = z.object({
+  runId: z.string().optional(),
+  requested: z.object({
+    lat: z.number().min(-90).max(90),
+    lng: z.number().min(-180).max(180),
+  }),
+  expectedRunVersion: z.number().int().positive().optional(),
+  clientRequestId: z.string().optional(),
+});
+export type OriginPreviewRequest = z.infer<typeof OriginPreviewRequestSchema>;
+
+export const OriginPreviewResponseSchema = z.object({
+  clientRequestId: z.string().optional(),
+  validationId: z.string(),
+  expiresAt: z.string(),
+  runId: z.string(),
+  runVersion: z.number(),
+  regionVersion: z.string(),
+  graphVersion: z.string(),
+  requested: z.object({ lat: z.number(), lng: z.number() }),
+  resolved: z.object({ lat: z.number(), lng: z.number() }).nullable(),
+  roadSegmentId: z.string().nullable().optional(),
+  segmentFraction: z.number().nullable().optional(),
+  snapDistanceMeters: z.number().nullable().optional(),
+  distanceFromNitkKm: z.number().nullable().optional(),
+  validationStatus: z.enum(['ACCEPTED', 'REJECTED']),
+  rejectionCode: z
+    .enum(['OUT_OF_REGION', 'NO_ROAD_ACCESS', 'INVALID_COORDINATES', 'EXPIRED_PREVIEW', 'DISALLOWED_RUN_STATE'])
+    .nullable()
+    .optional(),
+  rejectionReason: z.string().nullable().optional(),
+});
+export type OriginPreviewResponse = z.infer<typeof OriginPreviewResponseSchema>;
+
+export const OriginCommitRequestSchema = z.object({
+  runId: z.string().optional(),
+  validationId: z.string().optional(),
+  requested: z.object({ lat: z.number(), lng: z.number() }).optional(),
+  expectedRunVersion: z.number().int().positive().optional(),
+  idempotencyKey: z.string().optional(),
+});
+export type OriginCommitRequest = z.infer<typeof OriginCommitRequestSchema>;

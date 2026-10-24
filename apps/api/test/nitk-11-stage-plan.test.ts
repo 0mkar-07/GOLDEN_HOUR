@@ -67,7 +67,7 @@ describe('NITK Hospital Data, Agent, Map & Simulator 11-Stage Verification', () 
     const tabBody = JSON.parse(tabRes.body);
 
     expect(tabBody.total).toBe(23);
-    expect(tabBody.region).toBe('nitk-surathkal-30km');
+    expect(tabBody.region).toBe(NITK_REGION.regionId);
     expect(Array.isArray(tabBody.hospitals)).toBe(true);
     expect(tabBody.hospitals.length).toBe(23);
 
@@ -191,13 +191,13 @@ describe('NITK Hospital Data, Agent, Map & Simulator 11-Stage Verification', () 
     // Tool 2: Hospital readiness
     const readiness = agentTools.getHospitalReadiness('hosp-001');
     expect(readiness).toBeDefined();
-    expect(readiness?.hospitalId).toBe('hosp-001');
+    expect(readiness?.hospitalId).toBe(store.resolveHospitalId('hosp-001'));
     expect(readiness?.resources.length).toBeGreaterThan(0);
     expect(readiness?.staff.length).toBeGreaterThan(0);
 
     // Tool 3: Service hours at arrival
     const arrivalHours = agentTools.getServiceHoursAtArrival('hosp-001', 600);
-    expect(arrivalHours.hospitalId).toBe('hosp-001');
+    expect(arrivalHours.hospitalId).toBe(store.resolveHospitalId('hosp-001'));
     expect(arrivalHours.emergencyDeptOpen).toBe(true);
   });
 

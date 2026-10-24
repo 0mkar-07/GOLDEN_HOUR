@@ -4,6 +4,7 @@ import {
   UpdateResourcePoolRequestSchema,
   UpdateStaffAvailabilityRequestSchema,
   UserRole,
+  NITK_REGION,
 } from '@goldenhour/contracts';
 import { store } from '../../db/store.js';
 import { requireAuth, requireHospitalOwnership } from '../auth/plugin.js';
@@ -43,7 +44,7 @@ export async function registerHospitalRoutes(fastify: FastifyInstance) {
       return reply.status(200).send({
         hospitals,
         total: hospitals.length,
-        region: 'nitk-surathkal-30km',
+        region: NITK_REGION.regionId,
         datasetStatus: 'synthetic_demo',
       });
     }

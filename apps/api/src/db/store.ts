@@ -43,11 +43,14 @@ import {
   IMPORTED_NITK_DATASET,
   DEMO_FACILITY_CROSSWALK,
   REVERSE_CROSSWALK,
+  HOSPITAL_ALIAS_MAP,
 } from '@goldenhour/scenario-fixtures';
 import {
   NITK_REGION,
   isWithinNitkRegion,
   calculateHaversineDistanceMeters,
+  projectToNitkMetric,
+  OriginPreviewResponse,
 } from '@goldenhour/contracts';
 import { hashPassword } from '../modules/auth/password.js';
 
@@ -62,6 +65,9 @@ export interface UserRecord extends UserDto {
 class GoldenHourDatabaseStore {
   public users: Map<string, UserRecord> = new Map();
   public hospitals: Map<string, HospitalDto> = new Map();
+  public aliases: Map<string, string> = new Map(); // Canonical ID resolution (F-01, F-02)
+  public originPreviews: Map<string, OriginPreviewResponse> = new Map();
+  public idempotencyRecords: Map<string, any> = new Map();
   public staffAvailability: Map<string, StaffAvailabilityDto> = new Map();
   public resourcePools: Map<string, ResourcePoolDto> = new Map();
   public allocations: Map<string, AllocationDto> = new Map();
@@ -132,61 +138,84 @@ class GoldenHourDatabaseStore {
   private seeded = false;
 
   /**
-   * Idempotent seeding mechanism
+   * Idempotent seeding mechanism with canonical 23 NITK facilities (Stage 1-4)
    */
   public async seed(): Promise<void> {
-    // 1. Seed Hospitals
-    for (const hosp of SEEDED_HOSPITALS) {
-      if (!this.hospitals.has(hosp.id)) {
-        this.hospitals.set(hosp.id, { ...hosp });
-      }
+    // 1. Initialize Aliases Map (F-01, F-02)
+    this.aliases.clear();
+    for (const [alias, canonicalId] of Object.entries(HOSPITAL_ALIAS_MAP)) {
+      this.aliases.set(alias, canonicalId);
     }
 
-    // 1b. Enrich with imported NITK 23 facilities
+    // 2. Seed Canonical NITK 23 facilities (Preserves source name, coordinates & unique IDs)
+    this.hospitals.clear();
     for (const hosp of IMPORTED_NITK_DATASET.hospitals) {
-      const existing = this.hospitals.get(hosp.id);
-      if (existing) {
-        this.hospitals.set(hosp.id, {
-          ...existing,
-          facilityType: hosp.facilityType,
-          city: hosp.city,
-          pincode: hosp.pincode,
-          distanceFromNitkKm: hosp.distanceFromNitkKm,
-          capabilitiesDetail: hosp.capabilitiesDetail,
-          provenance: hosp.provenance,
-          timingsSummary: hosp.timingsSummary,
-          surgicalSummary: hosp.surgicalSummary,
-        });
-      } else {
-        this.hospitals.set(hosp.id, { ...hosp });
-      }
-      // Index external facility_id alias
-      const extId = DEMO_FACILITY_CROSSWALK[hosp.id] || hosp.code.replace('NITK-', '');
-      if (extId && !this.hospitals.has(extId)) {
-        this.hospitals.set(extId, { ...hosp, id: extId });
-      }
+      this.hospitals.set(hosp.id, { ...hosp });
+      this.aliases.set(hosp.code, hosp.id);
+      this.aliases.set(hosp.code.replace('NITK-', ''), hosp.id);
+      this.aliases.set(hosp.id, hosp.id);
     }
 
-    // 2. Seed Resource Pools
-    for (const pool of SEEDED_RESOURCE_POOLS) {
-      if (!this.resourcePools.has(pool.id)) {
-        this.resourcePools.set(pool.id, { ...pool });
-      }
-    }
+    // 3. Seed Resource Pools (F-04)
+    this.resourcePools.clear();
     for (const pool of IMPORTED_NITK_DATASET.resourcePools) {
-      if (!this.resourcePools.has(pool.id)) {
-        this.resourcePools.set(pool.id, { ...pool });
+      this.resourcePools.set(pool.id, { ...pool });
+    }
+    for (const pool of SEEDED_RESOURCE_POOLS) {
+      const canonicalHospId = this.resolveHospitalId(pool.hospitalId);
+      const mappedId = `pool-legacy-${pool.id}-${canonicalHospId}`;
+      if (!this.resourcePools.has(mappedId)) {
+        this.resourcePools.set(mappedId, {
+          ...pool,
+          id: mappedId,
+          hospitalId: canonicalHospId,
+        });
       }
     }
 
-    // 3. Seed Staff Availability
+    // 4. Seed Staff Availability
+    this.staffAvailability.clear();
     for (const staff of SEEDED_STAFF_AVAILABILITY) {
-      if (!this.staffAvailability.has(staff.id)) {
-        this.staffAvailability.set(staff.id, { ...staff });
+      const canonicalHospId = this.resolveHospitalId(staff.hospitalId);
+      this.staffAvailability.set(staff.id, {
+        ...staff,
+        hospitalId: canonicalHospId,
+      });
+    }
+
+    // Seed staff for major NITK hospitals so specialists exist across the 23 facilities
+    for (const hosp of IMPORTED_NITK_DATASET.hospitals) {
+      if (hosp.capabilities.includes('TRAUMA_L1') || hosp.facilityType === 'medical_college_hospital') {
+        const staffId = `staff-trauma-${hosp.id}`;
+        if (!this.staffAvailability.has(staffId)) {
+          this.staffAvailability.set(staffId, {
+            id: staffId,
+            hospitalId: hosp.id,
+            specialty: SpecialtyType.TRAUMA_SURGEON,
+            availableTeamSlots: 1,
+            readyAt: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
+            version: 1,
+            updatedAt: new Date().toISOString(),
+          });
+        }
+      }
+      if (hosp.capabilities.includes('NEUROSURGERY')) {
+        const staffId = `staff-neuro-${hosp.id}`;
+        if (!this.staffAvailability.has(staffId)) {
+          this.staffAvailability.set(staffId, {
+            id: staffId,
+            hospitalId: hosp.id,
+            specialty: SpecialtyType.NEUROSURGEON,
+            availableTeamSlots: 1,
+            readyAt: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
+            version: 1,
+            updatedAt: new Date().toISOString(),
+          });
+        }
       }
     }
 
-    // 4. Seed Users with Scrypt Hashed Passwords
+    // 5. Seed Users with Scrypt Hashed Passwords
     for (const u of SEEDED_USERS) {
       const existing = Array.from(this.users.values()).find((user) => user.email === u.email);
       if (!existing) {
@@ -196,7 +225,7 @@ class GoldenHourDatabaseStore {
           email: u.email,
           name: u.name,
           role: u.role,
-          hospitalId: u.hospitalId ?? null,
+          hospitalId: u.hospitalId ? this.resolveHospitalId(u.hospitalId) : null,
           ambulanceId: u.ambulanceId ?? null,
           active: u.active,
           createdAt: u.createdAt,
@@ -206,83 +235,68 @@ class GoldenHourDatabaseStore {
       }
     }
 
-    // 5. Seed Operating Theatres
-    if (this.operatingTheatres.size === 0) {
-      const theatres: OperatingTheatreDto[] = [
-        {
-          id: 'ot-001-1',
-          hospitalId: 'hosp-001',
-          name: 'OR-1 Major Trauma & Neurosurgery Suite',
-          capabilities: ['TRAUMA_L1', 'NEUROSURGERY', 'ICU'],
-          active: true,
-        },
-        {
-          id: 'ot-001-2',
-          hospitalId: 'hosp-001',
-          name: 'OR-2 General Emergency & Laparoscopic Theatre',
-          capabilities: ['STABILIZATION', 'EMERGENCY_DEPT'],
-          active: true,
-        },
-        {
-          id: 'ot-001-3',
-          hospitalId: 'hosp-001',
-          name: 'OR-3 Cardiac Cath & Vascular Intervention Suite',
-          capabilities: ['CARDIAC_CATH', 'ICU'],
-          active: true,
-        },
-        {
-          id: 'ot-002-1',
-          hospitalId: 'hosp-002',
-          name: 'Surathkal Resuscitation & Urgent Surgical Room',
-          capabilities: ['STABILIZATION', 'EMERGENCY_DEPT'],
-          active: true,
-        },
-        {
-          id: 'ot-003-1',
-          hospitalId: 'hosp-003',
-          name: 'Mukka Multi-Specialty Surgical Theatre',
-          capabilities: ['STABILIZATION', 'VENTILATORS', 'ICU'],
-          active: true,
-        },
-      ];
-      for (const ot of theatres) {
+    // 6. Seed Operating Theatres (F-05)
+    this.operatingTheatres.clear();
+    for (const ot of IMPORTED_NITK_DATASET.operatingTheatres) {
+      this.operatingTheatres.set(ot.id, { ...ot });
+    }
+    // Also include default demo theatres mapped to canonical IDs
+    const demoTheatres: OperatingTheatreDto[] = [
+      {
+        id: 'ot-001-1',
+        hospitalId: this.resolveHospitalId('hosp-001'),
+        name: 'OR-1 Major Trauma & Neurosurgery Suite',
+        capabilities: ['TRAUMA_L1', 'NEUROSURGERY', 'ICU'],
+        active: true,
+      },
+      {
+        id: 'ot-001-2',
+        hospitalId: this.resolveHospitalId('hosp-001'),
+        name: 'OR-2 General Emergency & Laparoscopic Theatre',
+        capabilities: ['STABILIZATION', 'EMERGENCY_DEPT'],
+        active: true,
+      },
+      {
+        id: 'ot-001-3',
+        hospitalId: this.resolveHospitalId('hosp-001'),
+        name: 'OR-3 Cardiac Cath & Vascular Intervention Suite',
+        capabilities: ['CARDIAC_CATH', 'ICU'],
+        active: true,
+      },
+      {
+        id: 'ot-002-1',
+        hospitalId: this.resolveHospitalId('hosp-002'),
+        name: 'Surathkal Resuscitation & Urgent Surgical Room',
+        capabilities: ['STABILIZATION', 'EMERGENCY_DEPT'],
+        active: true,
+      },
+      {
+        id: 'ot-003-1',
+        hospitalId: this.resolveHospitalId('hosp-003'),
+        name: 'Mukka Multi-Specialty Surgical Theatre',
+        capabilities: ['STABILIZATION', 'VENTILATORS', 'ICU'],
+        active: true,
+      },
+    ];
+    for (const ot of demoTheatres) {
+      if (!this.operatingTheatres.has(ot.id)) {
         this.operatingTheatres.set(ot.id, ot);
       }
     }
 
-    // 6. Seed Service Hours (24x7 Emergency/OT for all facilities)
-    if (this.serviceHours.size === 0) {
-      for (const hosp of SEEDED_HOSPITALS) {
-        this.serviceHours.set(hosp.id, [
-          {
-            hospitalId: hosp.id,
-            serviceType: 'EMERGENCY_DEPT',
-            is24x7: true,
-            timezone: 'Asia/Kolkata',
-          },
-          {
-            hospitalId: hosp.id,
-            serviceType: 'OPERATING_THEATRE',
-            is24x7: true,
-            timezone: 'Asia/Kolkata',
-          },
-          {
-            hospitalId: hosp.id,
-            serviceType: 'ICU',
-            is24x7: true,
-            timezone: 'Asia/Kolkata',
-          },
-        ]);
-      }
+    // 7. Seed Service Hours (F-05)
+    this.serviceHours.clear();
+    for (const [hospId, hours] of IMPORTED_NITK_DATASET.serviceHours.entries()) {
+      this.serviceHours.set(hospId, [...hours]);
     }
 
-    // 7. Seed Scheduled Procedures with realistic elective and in-progress cases
+    // 8. Seed Scheduled Procedures with realistic elective and in-progress cases
     if (this.scheduledProcedures.size === 0) {
       const now = Date.now();
       const procedures: ScheduledProcedureDto[] = [
         {
           id: 'proc-101',
-          hospitalId: 'hosp-001',
+          hospitalId: this.resolveHospitalId('hosp-001'),
           theatreId: 'ot-001-1',
           caseType: 'ELECTIVE',
           procedureName: 'Elective Laparoscopic Inguinal Hernia Repair',
@@ -296,7 +310,7 @@ class GoldenHourDatabaseStore {
         },
         {
           id: 'proc-102',
-          hospitalId: 'hosp-001',
+          hospitalId: this.resolveHospitalId('hosp-001'),
           theatreId: 'ot-001-2',
           caseType: 'URGENT',
           procedureName: 'Acute Appendectomy with Peritonitis',
@@ -311,7 +325,7 @@ class GoldenHourDatabaseStore {
         },
         {
           id: 'proc-103',
-          hospitalId: 'hosp-002',
+          hospitalId: this.resolveHospitalId('hosp-002'),
           theatreId: 'ot-002-1',
           caseType: 'ELECTIVE',
           procedureName: 'Minor Soft Tissue Excision',
@@ -330,7 +344,7 @@ class GoldenHourDatabaseStore {
     }
 
     this.seeded = true;
-    console.log(`[Store] Seeded ${this.hospitals.size} hospitals and ${this.users.size} demo users.`);
+    console.log(`[Store] Seeded ${this.hospitals.size} canonical facilities and ${this.users.size} demo users.`);
   }
 
   // --- User Operations ---
@@ -343,8 +357,16 @@ class GoldenHourDatabaseStore {
   }
 
   // --- Hospital Operations ---
+  public resolveHospitalId(id: string): string {
+    return this.aliases.get(id) || id;
+  }
+
   public getHospital(id: string): HospitalDto | undefined {
-    let hosp = this.hospitals.get(id);
+    const canonicalId = this.resolveHospitalId(id);
+    let hosp = this.hospitals.get(canonicalId);
+    if (!hosp) {
+      hosp = this.hospitals.get(id);
+    }
     if (!hosp && REVERSE_CROSSWALK[id]) {
       hosp = this.hospitals.get(REVERSE_CROSSWALK[id]);
     }
@@ -365,12 +387,17 @@ class GoldenHourDatabaseStore {
   public listHospitals(options?: { dataset?: 'demo' | 'nitk23' | 'all' }): HospitalDto[] {
     const mode = options?.dataset || (this.useImportedDataset ? 'nitk23' : 'demo');
     if (mode === 'demo') {
-      return Array.from(this.hospitals.values()).filter((h) =>
-        ['hosp-001', 'hosp-002', 'hosp-003', 'hosp-004', 'hosp-005'].includes(h.id)
-      );
+      const demoCanonicalIds = [
+        this.resolveHospitalId('hosp-001'),
+        this.resolveHospitalId('hosp-002'),
+        this.resolveHospitalId('hosp-003'),
+        this.resolveHospitalId('hosp-004'),
+        this.resolveHospitalId('hosp-005'),
+      ];
+      return demoCanonicalIds.map((id) => this.getHospital(id)!).filter(Boolean);
     }
     // Return all 23 distinct canonical facilities from imported dataset
-    return IMPORTED_NITK_DATASET.hospitals.map((h) => this.getHospital(h.id) || h);
+    return Array.from(this.hospitals.values());
   }
 
   public getImportReport() {
@@ -395,23 +422,18 @@ class GoldenHourDatabaseStore {
     return list;
   }
 
-  // --- Ambulance Origin Operations (Stage 6) ---
+  // --- Ambulance Origin Operations (Stage 6 & 7) ---
   public ambulanceOrigin: { lat: number; lng: number } = {
     lat: NITK_REGION.centerLat,
     lng: NITK_REGION.centerLng,
   };
 
-  public setAmbulanceOrigin(
+  public previewAmbulanceOrigin(
     lat: number,
     lng: number,
-    expectedRunVersion?: number
-  ): {
-    requested: { lat: number; lng: number };
-    snapped: { lat: number; lng: number };
-    snapDistanceMeters: number;
-    distanceFromNitkKm: number;
-    runVersion: number;
-  } {
+    expectedRunVersion?: number,
+    clientRequestId?: string
+  ): OriginPreviewResponse {
     const distFromNitk = calculateHaversineDistanceMeters(
       NITK_REGION.centerLat,
       NITK_REGION.centerLng,
@@ -419,13 +441,8 @@ class GoldenHourDatabaseStore {
       lng
     );
 
-    if (distFromNitk > NITK_REGION.radiusMeters) {
-      throw new Error(
-        `OUT_OF_REGION: Ambulance origin must be within 30 km of NITK Surathkal (${(distFromNitk / 1000).toFixed(1)} km from center)`
-      );
-    }
+    const withinRegion = isWithinNitkRegion(lat, lng);
 
-    // Road snap: find nearest node or road vertex within 1000m
     let nearestNode = SEEDED_ROAD_GRAPH.nodes[0];
     let minDistance = Infinity;
     for (const node of SEEDED_ROAD_GRAPH.nodes) {
@@ -436,35 +453,193 @@ class GoldenHourDatabaseStore {
       }
     }
 
-    // 50m road snap evaluation: snap to node if within 1000m, otherwise use requested coordinate
-    const snappedLat = minDistance <= 1000 ? nearestNode.lat : lat;
-    const snappedLng = minDistance <= 1000 ? nearestNode.lng : lng;
+    const validationId = `val-${Math.random().toString(36).substring(2, 9)}`;
+    const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+
+    if (!withinRegion) {
+      const preview: OriginPreviewResponse = {
+        clientRequestId,
+        validationId,
+        expiresAt,
+        runId: this.simulationRun.id,
+        runVersion: this.simulationRun.runVersion,
+        regionVersion: NITK_REGION.datasetVersion,
+        graphVersion: '2026.10-nitk-graph',
+        requested: { lat, lng },
+        resolved: null,
+        snapDistanceMeters: Math.round(minDistance),
+        distanceFromNitkKm: parseFloat((distFromNitk / 1000).toFixed(2)),
+        validationStatus: 'REJECTED',
+        rejectionCode: 'OUT_OF_REGION',
+        rejectionReason: `Coordinates are ${(distFromNitk / 1000).toFixed(1)}km from NITK, exceeding the 40 km regional boundary.`,
+      };
+      this.originPreviews.set(validationId, preview);
+      return preview;
+    }
+
+    if (minDistance > 150) {
+      const preview: OriginPreviewResponse = {
+        clientRequestId,
+        validationId,
+        expiresAt,
+        runId: this.simulationRun.id,
+        runVersion: this.simulationRun.runVersion,
+        regionVersion: NITK_REGION.datasetVersion,
+        graphVersion: '2026.10-nitk-graph',
+        requested: { lat, lng },
+        resolved: null,
+        snapDistanceMeters: Math.round(minDistance),
+        distanceFromNitkKm: parseFloat((distFromNitk / 1000).toFixed(2)),
+        validationStatus: 'REJECTED',
+        rejectionCode: 'NO_ROAD_ACCESS',
+        rejectionReason: `Selected point is ${Math.round(minDistance)}m from nearest drivable road (tolerance: 150m).`,
+      };
+      this.originPreviews.set(validationId, preview);
+      return preview;
+    }
+
+    const preview: OriginPreviewResponse = {
+      clientRequestId,
+      validationId,
+      expiresAt,
+      runId: this.simulationRun.id,
+      runVersion: this.simulationRun.runVersion,
+      regionVersion: NITK_REGION.datasetVersion,
+      graphVersion: '2026.10-nitk-graph',
+      requested: { lat, lng },
+      resolved: { lat: nearestNode.lat, lng: nearestNode.lng },
+      roadSegmentId: 'seg-1',
+      segmentFraction: 0,
+      snapDistanceMeters: Math.round(minDistance),
+      distanceFromNitkKm: parseFloat((distFromNitk / 1000).toFixed(2)),
+      validationStatus: 'ACCEPTED',
+      rejectionCode: null,
+      rejectionReason: null,
+    };
+    this.originPreviews.set(validationId, preview);
+    return preview;
+  }
+
+  public setAmbulanceOrigin(
+    lat: number,
+    lng: number,
+    expectedRunVersion?: number,
+    validationId?: string,
+    idempotencyKey?: string
+  ): {
+    requested: { lat: number; lng: number };
+    snapped: { lat: number; lng: number };
+    snapDistanceMeters: number;
+    distanceFromNitkKm: number;
+    runVersion: number;
+  } {
+    if (validationId) {
+      const preview = this.originPreviews.get(validationId);
+      if (!preview || preview.validationStatus !== 'ACCEPTED' || !preview.resolved) {
+        const err: any = new Error('Invalid or expired validation ID for origin commit');
+        err.statusCode = 409;
+        err.code = 'EXPIRED_PREVIEW';
+        throw err;
+      }
+      lat = preview.resolved.lat;
+      lng = preview.resolved.lng;
+    }
+
+    if (idempotencyKey && this.idempotencyRecords.has(idempotencyKey)) {
+      const record = this.idempotencyRecords.get(idempotencyKey);
+      if (record.lat === lat && record.lng === lng) {
+        return record.result;
+      } else {
+        const err: any = new Error('Idempotency key reused with different request payload');
+        err.statusCode = 409;
+        err.code = 'IDEMPOTENCY_CONFLICT';
+        throw err;
+      }
+    }
+
+    if (expectedRunVersion !== undefined && this.simulationRun.runVersion !== expectedRunVersion) {
+      const err: any = new Error(
+        `Version conflict: expected runVersion ${expectedRunVersion}, got ${this.simulationRun.runVersion}`
+      );
+      err.statusCode = 409;
+      err.code = 'VERSION_CONFLICT';
+      throw err;
+    }
+
+    const distFromNitk = calculateHaversineDistanceMeters(
+      NITK_REGION.centerLat,
+      NITK_REGION.centerLng,
+      lat,
+      lng
+    );
+
+    if (distFromNitk > NITK_REGION.radiusMeters) {
+      const err: any = new Error(
+        `OUT_OF_REGION: Ambulance origin must be within 40 km of NITK Surathkal (${(distFromNitk / 1000).toFixed(1)} km from center)`
+      );
+      err.statusCode = 400;
+      err.code = 'OUT_OF_REGION';
+      throw err;
+    }
+
+    let nearestNode = SEEDED_ROAD_GRAPH.nodes[0];
+    let minDistance = Infinity;
+    for (const node of SEEDED_ROAD_GRAPH.nodes) {
+      const d = calculateHaversineDistanceMeters(lat, lng, node.lat, node.lng);
+      if (d < minDistance) {
+        minDistance = d;
+        nearestNode = node;
+      }
+    }
+
+    if (minDistance > 150 && !validationId) {
+      const err: any = new Error(`NO_ROAD_ACCESS: Selected coordinate is ${Math.round(minDistance)}m from drivable road (max 150m)`);
+      err.statusCode = 422;
+      err.code = 'NO_ROAD_ACCESS';
+      throw err;
+    }
+
+    const snappedLat = nearestNode.lat;
+    const snappedLng = nearestNode.lng;
+
+    const metric = projectToNitkMetric(snappedLat, snappedLng);
+    const projectedX = Math.round(metric.x / 10);
+    const projectedY = Math.round(metric.y / 10);
 
     this.ambulanceOrigin = { lat: snappedLat, lng: snappedLng };
     this.updateAmbulancePosition(
-      nearestNode ? nearestNode.x : 120,
-      nearestNode ? nearestNode.y : 150,
+      projectedX,
+      projectedY,
       snappedLat,
       snappedLng
     );
 
-    if (expectedRunVersion !== undefined && this.simulationRun.runVersion !== expectedRunVersion) {
-      // allow or increment version
-    }
     this.simulationRun.runVersion += 1;
 
-    return {
+    const result = {
       requested: { lat, lng },
       snapped: { lat: snappedLat, lng: snappedLng },
       snapDistanceMeters: Math.round(minDistance),
       distanceFromNitkKm: parseFloat((distFromNitk / 1000).toFixed(2)),
       runVersion: this.simulationRun.runVersion,
     };
+
+    if (idempotencyKey) {
+      this.idempotencyRecords.set(idempotencyKey, { lat, lng, result });
+    }
+
+    return result;
   }
 
   public resetAmbulanceOriginToDefault(): { lat: number; lng: number } {
     this.ambulanceOrigin = { lat: NITK_REGION.centerLat, lng: NITK_REGION.centerLng };
-    this.updateAmbulancePosition(120, 150, NITK_REGION.centerLat, NITK_REGION.centerLng);
+    const metric = projectToNitkMetric(NITK_REGION.centerLat, NITK_REGION.centerLng);
+    this.updateAmbulancePosition(
+      Math.round(metric.x / 10),
+      Math.round(metric.y / 10),
+      NITK_REGION.centerLat,
+      NITK_REGION.centerLng
+    );
     this.simulationRun.runVersion += 1;
     return this.ambulanceOrigin;
   }
@@ -490,7 +665,10 @@ class GoldenHourDatabaseStore {
 
   // --- Resource Pool Operations ---
   public listResourcePoolsByHospital(hospitalId: string): ResourcePoolDto[] {
-    return Array.from(this.resourcePools.values()).filter((p) => p.hospitalId === hospitalId);
+    const resolved = this.resolveHospitalId(hospitalId);
+    return Array.from(this.resourcePools.values()).filter(
+      (p) => p.hospitalId === resolved || p.hospitalId === hospitalId
+    );
   }
 
   public listResourcePools(hospitalId: string): ResourcePoolDto[] {
@@ -554,7 +732,10 @@ class GoldenHourDatabaseStore {
 
   // --- Staff Availability Operations ---
   public listStaffByHospital(hospitalId: string): StaffAvailabilityDto[] {
-    return Array.from(this.staffAvailability.values()).filter((s) => s.hospitalId === hospitalId);
+    const resolved = this.resolveHospitalId(hospitalId);
+    return Array.from(this.staffAvailability.values()).filter(
+      (s) => s.hospitalId === resolved || s.hospitalId === hospitalId
+    );
   }
 
   public listStaffAvailability(hospitalId: string): StaffAvailabilityDto[] {
@@ -1750,7 +1931,7 @@ class GoldenHourDatabaseStore {
     };
 
     this.recordAudit({
-      actorId: actorUserId,
+      actorId: actorUserId || 'admin-system',
       actorRole: UserRole.ADMIN,
       action: 'SYSTEM_SETTINGS_UPDATED',
       entityType: 'SYSTEM_SETTINGS',
@@ -1796,7 +1977,7 @@ class GoldenHourDatabaseStore {
     this.hospitals.set(hospitalId, hosp);
 
     this.recordAudit({
-      actorId: actorUserId,
+      actorId: actorUserId || 'admin-system',
       actorRole: UserRole.ADMIN,
       action: 'ADMIN_HOSPITAL_STATUS_OVERRIDE',
       entityType: 'HOSPITAL',
@@ -1812,7 +1993,7 @@ class GoldenHourDatabaseStore {
     return hosp;
   }
 
-  public resetDemoScenario(actorUserId: string): void {
+  public resetDemoScenario(actorUserId?: string): void {
     // Confirmation-gated reset restricted to synthetic demo dataset
     this.cases.clear();
     this.assessments.clear();
@@ -1820,21 +2001,29 @@ class GoldenHourDatabaseStore {
     this.hospitalRequests.clear();
     this.allocations.clear();
     this.recommendations.clear();
+    this.emergencyPriorityTickets.clear();
+    this.originPreviews.clear();
+    this.idempotencyRecords.clear();
     this.clearTrafficOverrides();
 
-    // Reset hospital inventories to baseline
+    // Reset hospital inventories to baseline (both demo and imported canonical pools)
     this.resourcePools.clear();
     for (const pool of SEEDED_RESOURCE_POOLS) {
       this.resourcePools.set(pool.id, { ...pool });
     }
+    for (const pool of IMPORTED_NITK_DATASET.resourcePools) {
+      this.resourcePools.set(pool.id, { ...pool });
+    }
 
     // Reset ambulance position
+    const metric = projectToNitkMetric(NITK_REGION.centerLat, NITK_REGION.centerLng);
+    this.ambulanceOrigin = { lat: NITK_REGION.centerLat, lng: NITK_REGION.centerLng };
     this.ambulancePosition = {
       ambulanceId: 'amb-104',
-      x: 120,
-      y: 150,
-      lat: 13.0110,
-      lng: 74.7943,
+      x: Math.round(metric.x / 10),
+      y: Math.round(metric.y / 10),
+      lat: NITK_REGION.centerLat,
+      lng: NITK_REGION.centerLng,
       speed: 0,
       speedMps: 0,
       heading: 85,
@@ -1848,7 +2037,7 @@ class GoldenHourDatabaseStore {
     };
 
     this.recordAudit({
-      actorId: actorUserId,
+      actorId: actorUserId || 'admin-system',
       actorRole: UserRole.ADMIN,
       action: 'DEMO_SCENARIO_RESET',
       entityType: 'SYSTEM',
@@ -1861,15 +2050,22 @@ class GoldenHourDatabaseStore {
 
   // --- Operating Theatres & Procedure Scheduling ---
   public listOperatingTheatres(hospitalId: string): OperatingTheatreDto[] {
-    return Array.from(this.operatingTheatres.values()).filter((ot) => ot.hospitalId === hospitalId);
+    const resolved = this.resolveHospitalId(hospitalId);
+    return Array.from(this.operatingTheatres.values()).filter(
+      (ot) => ot.hospitalId === resolved || ot.hospitalId === hospitalId
+    );
   }
 
   public listScheduledProcedures(hospitalId: string): ScheduledProcedureDto[] {
-    return Array.from(this.scheduledProcedures.values()).filter((p) => p.hospitalId === hospitalId);
+    const resolved = this.resolveHospitalId(hospitalId);
+    return Array.from(this.scheduledProcedures.values()).filter(
+      (p) => p.hospitalId === resolved || p.hospitalId === hospitalId
+    );
   }
 
   public getHospitalServices(hospitalId: string): ServiceHoursDto[] {
-    return this.serviceHours.get(hospitalId) || [];
+    const resolved = this.resolveHospitalId(hospitalId);
+    return this.serviceHours.get(resolved) || this.serviceHours.get(hospitalId) || [];
   }
 
   public createPriorityReview(
@@ -1884,16 +2080,21 @@ class GoldenHourDatabaseStore {
     const windowStart = new Date(arrivalTime.getTime() - 2 * 60 * 1000).toISOString();
     const windowEnd = new Date(arrivalTime.getTime() + 10 * 60 * 1000).toISOString();
 
-    // Check for existing pending ticket for this case
-    for (const ticket of this.emergencyPriorityTickets.values()) {
-      if (ticket.caseId === caseId && ticket.status === 'PENDING_REVIEW') {
-        return ticket;
-      }
-    }
-
     // Resolve target hospital (supports ID or crosswalk alias)
     const targetHospital = this.getHospital(hospitalId);
     const targetHospId = targetHospital ? targetHospital.id : hospitalId;
+
+    // Check for existing pending ticket for this case (F-23: supersede if destination changed)
+    for (const ticket of this.emergencyPriorityTickets.values()) {
+      if (ticket.caseId === caseId && ticket.status === 'PENDING_REVIEW') {
+        if (this.resolveHospitalId(ticket.hospitalId) === this.resolveHospitalId(targetHospId)) {
+          return ticket;
+        } else {
+          ticket.status = 'SUPERSEDED';
+          ticket.version += 1;
+        }
+      }
+    }
 
     // Detect actual resource-specific overlap:
     // emergencyStart < procedureEndWithTurnover && emergencyEnd > procedureStartWithPrep
@@ -1901,9 +2102,14 @@ class GoldenHourDatabaseStore {
     const emergencyStartMs = arrivalTime.getTime() - 2 * 60 * 1000;
     const emergencyEndMs = arrivalTime.getTime() + 45 * 60 * 1000; // emergency surgical prep and theatre window
 
+    // F-21: Only consider active competing ELECTIVE procedures, ignore completed/cancelled/urgent/emergency
     const conflictingProc = hospitalProcedures.find((p) => {
+      if (p.caseType !== 'ELECTIVE') return false;
+      if (p.status !== 'SCHEDULED' && p.status !== 'PREPARING') return false;
+      if (p.deferralEligibility === 'NOT_DEFERRABLE') return false;
+
       const procStartMs = new Date(p.plannedStart).getTime() - 10 * 60 * 1000;
-      const turnoverMs = (p.turnoverMinutes || 20) * 60 * 1000;
+      const turnoverMs = (p.turnoverMinutes !== null && p.turnoverMinutes !== undefined ? p.turnoverMinutes : 20) * 60 * 1000;
       const procEndMs = new Date(p.plannedEnd).getTime() + turnoverMs;
       return emergencyStartMs < procEndMs && emergencyEndMs > procStartMs;
     });
@@ -1953,7 +2159,10 @@ class GoldenHourDatabaseStore {
   }
 
   public listHospitalPriorityTickets(hospitalId: string): EmergencyPriorityTicketDto[] {
-    return Array.from(this.emergencyPriorityTickets.values()).filter((t) => t.hospitalId === hospitalId);
+    const resolved = this.resolveHospitalId(hospitalId);
+    return Array.from(this.emergencyPriorityTickets.values()).filter(
+      (t) => t.hospitalId === resolved || t.hospitalId === hospitalId
+    );
   }
 
   public getCasePriorityReview(caseId: string): EmergencyPriorityTicketDto | null {
@@ -1998,13 +2207,14 @@ class GoldenHourDatabaseStore {
       deferredProc = proc;
       this.queueOutbox('procedure.updated', proc.id, proc);
     } else if (decision === 'ALTERNATIVE_RESOURCE') {
-      if (alternateTheatreId) {
-        const theatre = this.operatingTheatres.get(alternateTheatreId);
-        if (!theatre || theatre.hospitalId !== ticket.hospitalId) {
-          throw new Error(`Invalid alternative theatre: ${alternateTheatreId} does not belong to hospital`);
-        }
-        ticket.targetTheatreId = alternateTheatreId;
+      if (!alternateTheatreId) {
+        throw new Error('alternateTheatreId is required when selecting ALTERNATIVE_RESOURCE');
       }
+      const theatre = this.operatingTheatres.get(alternateTheatreId);
+      if (!theatre || this.resolveHospitalId(theatre.hospitalId) !== this.resolveHospitalId(ticket.hospitalId)) {
+        throw new Error(`Invalid alternative theatre: ${alternateTheatreId} does not belong to hospital`);
+      }
+      ticket.targetTheatreId = alternateTheatreId;
       ticket.requestedAction = 'REVIEW_RESOURCE_ALTERNATIVE';
     }
 

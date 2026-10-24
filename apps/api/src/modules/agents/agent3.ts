@@ -60,22 +60,29 @@ export function runAgent3(
 
   for (const item of evaluations) {
     const hosp = item.hospital;
-    const toNodeId = HOSPITAL_NODE_MAP[hosp.id] || 'node-hosp-a';
+    let toNodeId = HOSPITAL_NODE_MAP[hosp.id];
+    if (!toNodeId) {
+      // Resolve actual closest road network node to hospital's metric location (F-07)
+      const closestNode = routing.findClosestNode(hosp.location.x, hosp.location.y);
+      toNodeId = closestNode.id;
+    }
 
     let travelSeconds = 9999;
     let routingSource: 'SIMULATED_GRAPH' | 'GOOGLE_ROUTES' | 'LIVE_OSRM' | 'FALLBACK_GRAPH' = 'SIMULATED_GRAPH';
+    let routeAvailable = true;
     try {
       const route = routing.calculateRoute(fromNode.id, toNodeId, trafficOverrides);
       travelSeconds = route.travelSeconds;
       routingSource = route.routingSource ?? 'SIMULATED_GRAPH';
     } catch {
       travelSeconds = 9999;
+      routeAvailable = false;
     }
 
-    // Time-to-care calculation
-    const readyAtSeconds = 0;
-    const receivingDelaySeconds = hosp.receivingDelaySeconds;
-    const careStartSeconds = Math.max(travelSeconds, readyAtSeconds) + receivingDelaySeconds;
+    // Time-to-care calculation with relative readiness (F-08)
+    const readyAtSeconds = hosp.receivingDelaySeconds || 120;
+    const receivingDelaySeconds = hosp.receivingDelaySeconds || 120;
+    const careStartSeconds = routeAvailable ? Math.max(travelSeconds, readyAtSeconds) + receivingDelaySeconds : 9999;
     const timeToCareSeconds = careStartSeconds;
 
     candidateScores.push({

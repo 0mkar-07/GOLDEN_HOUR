@@ -43,7 +43,7 @@ export const HospitalDirectoryTable: React.FC<HospitalDirectoryTableProps> = ({
   const [facilityTypeFilter, setFacilityTypeFilter] = useState('ALL');
   const [capabilityFilter, setCapabilityFilter] = useState('ALL');
   const [receivingFilter, setReceivingFilter] = useState('ALL');
-  const [maxDistanceKm, setMaxDistanceKm] = useState<number>(30);
+  const [maxDistanceKm, setMaxDistanceKm] = useState<number>(40);
 
   // Detail Drawer state
   const [drawerHospital, setDrawerHospital] = useState<HospitalDto | null>(null);
@@ -67,7 +67,7 @@ export const HospitalDirectoryTable: React.FC<HospitalDirectoryTableProps> = ({
         const res = await apiClient.getTabularHospitals({
           facilityType: facilityTypeFilter !== 'ALL' ? facilityTypeFilter : undefined,
           service: capabilityFilter !== 'ALL' ? capabilityFilter : undefined,
-          maxDistanceKm: maxDistanceKm < 30 ? maxDistanceKm : undefined,
+          maxDistanceKm: maxDistanceKm < 40 ? maxDistanceKm : undefined,
         });
         if (active) {
           setHospitals(res.hospitals || []);
@@ -162,7 +162,7 @@ export const HospitalDirectoryTable: React.FC<HospitalDirectoryTableProps> = ({
                 Regional Hospital Directory & Capability Matrix
               </h2>
               <span className="text-xs px-2.5 py-0.5 rounded-full font-semibold bg-emerald-100 text-emerald-800 border border-emerald-300">
-                NITK 30 km Enclave ({filteredHospitals.length} facilities)
+                NITK 40 km Enclave ({filteredHospitals.length} facilities)
               </span>
             </div>
             <p className="text-xs text-slate-500 mt-1">
@@ -247,7 +247,7 @@ export const HospitalDirectoryTable: React.FC<HospitalDirectoryTableProps> = ({
             <input
               type="range"
               min={3}
-              max={30}
+              max={40}
               step={1}
               value={maxDistanceKm}
               onChange={(e) => setMaxDistanceKm(Number(e.target.value))}
@@ -292,7 +292,7 @@ export const HospitalDirectoryTable: React.FC<HospitalDirectoryTableProps> = ({
             ) : filteredHospitals.length === 0 ? (
               <tr>
                 <td colSpan={13} className="py-12 text-center text-slate-500">
-                  No facilities match your search and filter criteria within the 30 km enclave.
+                  No facilities match your search and filter criteria within the 40 km enclave.
                 </td>
               </tr>
             ) : (
@@ -716,7 +716,7 @@ export const HospitalDirectoryTable: React.FC<HospitalDirectoryTableProps> = ({
                         </div>
                         <div className="p-3 flex items-center justify-between">
                           <span className="text-slate-500">Regional Enclave Radius:</span>
-                          <span className="font-semibold text-slate-800">30,000 meters (30 km)</span>
+                          <span className="font-semibold text-slate-800">40,000 meters (40 km)</span>
                         </div>
                       </div>
                     </div>

@@ -111,7 +111,7 @@ export const EmergencyPriorityTicketSchema = z.object({
 export type EmergencyPriorityTicketDto = z.infer<typeof EmergencyPriorityTicketSchema>;
 
 export const CreatePriorityReviewRequestSchema = z.object({
-  caseId: z.string(),
+  caseId: z.string().optional(),
   hospitalId: z.string(),
   estimatedArrivalSeconds: z.number().positive(),
   urgencyLevel: z.string().optional(),

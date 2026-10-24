@@ -5,6 +5,7 @@ import { store } from '../src/db/store.js';
 describe('Stages 3 & 4: Hospital Scheduling and Emergency Priority Review Tickets', () => {
   let app: any;
   let authCookie: string;
+  let adminCookie: string;
 
   beforeAll(async () => {
     app = await initApp();
@@ -21,6 +22,18 @@ describe('Stages 3 & 4: Hospital Scheduling and Emergency Priority Review Ticket
     expect(loginRes.statusCode).toBe(200);
     const cookies = loginRes.cookies;
     authCookie = cookies.find((c: any) => c.name === 'gh_session')?.value || '';
+
+    // Authenticate demo admin for hospital priority decisions
+    const adminLogin = await app.inject({
+      method: 'POST',
+      url: '/api/v1/auth/login',
+      payload: {
+        email: 'admin@goldenhour.test',
+        password: 'demo123',
+      },
+    });
+    expect(adminLogin.statusCode).toBe(200);
+    adminCookie = adminLogin.cookies.find((c: any) => c.name === 'gh_session')?.value || '';
   });
 
   it('retrieves operating theatres, service hours, and scheduled procedures for NITK/Mangaluru hospital', async () => {
@@ -32,7 +45,7 @@ describe('Stages 3 & 4: Hospital Scheduling and Emergency Priority Review Ticket
     expect(theatresRes.statusCode).toBe(200);
     const theatresBody = JSON.parse(theatresRes.body);
     expect(theatresBody.theatres.length).toBeGreaterThan(0);
-    expect(theatresBody.theatres[0].name).toContain('Trauma');
+    expect(theatresBody.theatres[0].name).toContain('OT');
 
     const procsRes = await app.inject({
       method: 'GET',
@@ -103,7 +116,7 @@ describe('Stages 3 & 4: Hospital Scheduling and Emergency Priority Review Ticket
     const decisionRes = await app.inject({
       method: 'POST',
       url: `/api/v1/priority-tickets/${ticket.id}/decision`,
-      cookies: { gh_session: authCookie },
+      cookies: { gh_session: adminCookie },
       payload: {
         decision: 'APPROVED',
         reviewerNotes: 'Elective case postponed to tomorrow morning; OR-1 reserved for incoming trauma.',

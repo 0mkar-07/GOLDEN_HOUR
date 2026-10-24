@@ -34,6 +34,7 @@ import {
   EmergencyPriorityTicketDto,
   CreatePriorityReviewRequest,
   DecidePriorityTicketRequest,
+  OriginPreviewResponse,
 } from '@goldenhour/contracts';
 
 export class ApiError extends Error {
@@ -124,10 +125,26 @@ export const apiClient = {
     });
   },
 
+  async previewSimulationOrigin(
+    lat: number,
+    lng: number,
+    expectedRunVersion?: number,
+    clientRequestId?: string
+  ): Promise<OriginPreviewResponse> {
+    return request<OriginPreviewResponse>('/api/v1/simulation/origin/preview', {
+      method: 'POST',
+      body: JSON.stringify({
+        requested: { lat, lng },
+        expectedRunVersion,
+        clientRequestId,
+      }),
+    });
+  },
+
   async setSimulationOrigin(
     lat: number,
     lng: number,
-    expectedRunVersion?: number
+    options?: { expectedRunVersion?: number; validationId?: string; idempotencyKey?: string }
   ): Promise<{
     message: string;
     requested: { lat: number; lng: number };
@@ -138,7 +155,13 @@ export const apiClient = {
   }> {
     return request<any>('/api/v1/simulation/origin', {
       method: 'POST',
-      body: JSON.stringify({ lat, lng, expectedRunVersion }),
+      body: JSON.stringify({
+        lat,
+        lng,
+        expectedRunVersion: options?.expectedRunVersion,
+        validationId: options?.validationId,
+        idempotencyKey: options?.idempotencyKey,
+      }),
     });
   },
 

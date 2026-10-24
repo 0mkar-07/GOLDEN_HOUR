@@ -10,43 +10,71 @@ import {
   NITK_REGION,
   projectToNitkMetric,
 } from '@goldenhour/contracts';
+import { z } from 'zod';
+import { createHash } from 'node:crypto';
 import rawData from './data/nitk_facilities.synthetic.json' with { type: 'json' };
 
-export interface RawFacilityCapability {
-  available_now: number | null;
-  total: number | null;
-  is_open_now?: boolean | null;
-}
+/**
+ * Runtime Zod validation schemas for input records (Stage 1 & Stage 3 / F-03)
+ */
+export const RawFacilityCapabilitySchema = z.object({
+  available_now: z.number().int().nonnegative().nullable().optional(),
+  total: z.number().int().nonnegative().nullable().optional(),
+  is_open_now: z.boolean().nullable().optional(),
+});
 
-export interface RawFacility {
-  facility_id: string;
-  name: string;
-  facility_type: 'hospital' | 'medical_college_hospital' | 'nursing_home' | 'campus_health_center';
-  address: string;
-  city: string;
-  state: string;
-  country: string;
-  pincode: string;
-  location: {
-    latitude: number;
-    longitude: number;
-    distance_from_nitk_km: number;
-    coordinate_source: string;
-    coordinate_confidence: 'low' | 'medium' | 'high';
-  };
-  data_status: 'synthetic_demo' | 'verified_live';
-  capabilities: Record<string, RawFacilityCapability>;
-  timings?: {
-    emergency_department?: string | null;
-    opd?: string | null;
-    elective_ot?: string | null;
-  };
-  surgical_services?: {
-    elective_surgery_supported?: boolean | null;
-    emergency_surgery_supported?: boolean | null;
-    operating_theatres_total?: number | null;
-    operating_theatres_available_now?: number | null;
-  };
+export const RawFacilitySchema = z.object({
+  facility_id: z.string().min(1),
+  name: z.string().min(1),
+  facility_type: z.enum([
+    'hospital',
+    'medical_college_hospital',
+    'nursing_home',
+    'campus_health_center',
+  ]),
+  address: z.string().min(1),
+  city: z.string().default('Mangaluru'),
+  state: z.string().default('Karnataka'),
+  country: z.string().default('India'),
+  pincode: z.string().default('575025'),
+  location: z.object({
+    latitude: z.number().min(-90).max(90),
+    longitude: z.number().min(-180).max(180),
+    distance_from_nitk_km: z.number().nonnegative(),
+    coordinate_source: z.string(),
+    coordinate_confidence: z.enum(['low', 'medium', 'high']),
+  }),
+  data_status: z.enum(['synthetic_demo', 'verified_live']),
+  capabilities: z.record(RawFacilityCapabilitySchema),
+  timings: z
+    .object({
+      emergency_department: z.string().nullable().optional(),
+      opd: z.string().nullable().optional(),
+      elective_ot: z.string().nullable().optional(),
+    })
+    .optional(),
+  surgical_services: z
+    .object({
+      elective_surgery_supported: z.boolean().nullable().optional(),
+      emergency_surgery_supported: z.boolean().nullable().optional(),
+      operating_theatres_total: z.number().int().nonnegative().nullable().optional(),
+      operating_theatres_available_now: z.number().int().nonnegative().nullable().optional(),
+    })
+    .optional(),
+});
+
+export type RawFacility = z.infer<typeof RawFacilitySchema>;
+
+export interface FacilityManifestEntry {
+  sourceId: string;
+  canonicalId: string;
+  exactName: string;
+  sourceLat: number;
+  sourceLng: number;
+  distanceMeters: number;
+  distanceBand: '0-10km' | '10-20km' | '20-30km' | '30-40km' | '>40km';
+  facilityType: string;
+  identityHash: string;
 }
 
 export interface ImportValidationReport {
@@ -57,45 +85,96 @@ export interface ImportValidationReport {
   maxDistanceMeters: number;
   datasetStatus: string;
   regionId: string;
+  datasetVersion: string;
   timestamp: string;
+  identityHash: string;
+  distanceBands: {
+    '0-10km': number;
+    '10-20km': number;
+    '20-30km': number;
+    '30-40km': number;
+    '>40km': number;
+  };
+  manifest: FacilityManifestEntry[];
   facilities: Array<{
     id: string;
     externalId: string;
     name: string;
     distanceMeters: number;
     validCoordinates: boolean;
-    within30km: boolean;
+    withinRegion: boolean;
+    within30km: boolean; // Backwards compatibility
   }>;
 }
 
-// Crosswalk between demonstration IDs and synthetic facility IDs
+// Canonical ID constructor (namespaced, stable, row-index independent)
+export function toCanonicalHospitalId(facilityId: string): string {
+  return `nitk:${facilityId}`;
+}
+
+// Legacy demo crosswalk mapping legacy IDs to canonical namespaced IDs
 export const DEMO_FACILITY_CROSSWALK: Record<string, string> = {
-  'hosp-001': 'AJ_HOSPITAL_MANGALURU',
-  'hosp-002': 'PADMAVATHI_SURATHKAL',
-  'hosp-003': 'SRINIVAS_MUKKA',
-  'hosp-004': 'KMC_ATTAVAR',
-  'hosp-005': 'NITK_HCC',
+  'hosp-001': 'nitk:AJ_HOSPITAL_MANGALURU',
+  'hosp-002': 'nitk:PADMAVATHI_SURATHKAL',
+  'hosp-003': 'nitk:SRINIVAS_MUKKA',
+  'hosp-004': 'nitk:KMC_ATTAVAR',
+  'hosp-005': 'nitk:NITK_HCC',
+};
+
+// Aliases mapping old codes, short codes, and raw IDs to canonical IDs (F-01, F-02)
+export const HOSPITAL_ALIAS_MAP: Record<string, string> = {
+  'hosp-001': 'nitk:AJ_HOSPITAL_MANGALURU',
+  'hosp-002': 'nitk:PADMAVATHI_SURATHKAL',
+  'hosp-003': 'nitk:SRINIVAS_MUKKA',
+  'hosp-004': 'nitk:KMC_ATTAVAR',
+  'hosp-005': 'nitk:NITK_HCC',
+  'HOSP-A': 'nitk:AJ_HOSPITAL_MANGALURU',
+  'HOSP-B': 'nitk:PADMAVATHI_SURATHKAL',
+  'HOSP-C': 'nitk:SRINIVAS_MUKKA',
+  'HOSP-D': 'nitk:KMC_ATTAVAR',
+  'HOSP-E': 'nitk:NITK_HCC',
+  AJ_HOSPITAL_MANGALURU: 'nitk:AJ_HOSPITAL_MANGALURU',
+  PADMAVATHI_SURATHKAL: 'nitk:PADMAVATHI_SURATHKAL',
+  SRINIVAS_MUKKA: 'nitk:SRINIVAS_MUKKA',
+  KMC_ATTAVAR: 'nitk:KMC_ATTAVAR',
+  NITK_HCC: 'nitk:NITK_HCC',
+  CHIRASHREE_SURATHKAL: 'nitk:CHIRASHREE_SURATHKAL',
 };
 
 export const REVERSE_CROSSWALK: Record<string, string> = {
-  AJ_HOSPITAL_MANGALURU: 'hosp-001',
-  PADMAVATHI_SURATHKAL: 'hosp-002',
-  SRINIVAS_MUKKA: 'hosp-003',
-  KMC_ATTAVAR: 'hosp-004',
-  NITK_HCC: 'hosp-005',
+  AJ_HOSPITAL_MANGALURU: 'nitk:AJ_HOSPITAL_MANGALURU',
+  PADMAVATHI_SURATHKAL: 'nitk:PADMAVATHI_SURATHKAL',
+  SRINIVAS_MUKKA: 'nitk:SRINIVAS_MUKKA',
+  KMC_ATTAVAR: 'nitk:KMC_ATTAVAR',
+  NITK_HCC: 'nitk:NITK_HCC',
+  CHIRASHREE_SURATHKAL: 'nitk:CHIRASHREE_SURATHKAL',
 };
 
 /**
- * Validates and transforms the 23 raw NITK synthetic facilities.
+ * Computes individual facility identity SHA-256 hash
  */
-export function importNitkFacilities(): {
+export function computeFacilityHash(
+  sourceId: string,
+  name: string,
+  lat: number,
+  lng: number
+): string {
+  return createHash('sha256')
+    .update(`${sourceId}|${name}|${lat.toFixed(6)}|${lng.toFixed(6)}`)
+    .digest('hex');
+}
+
+/**
+ * Validates and transforms the 23 raw NITK synthetic facilities with 40 km boundary.
+ */
+export function importNitkFacilities(customFacilities?: unknown[]): {
   hospitals: HospitalDto[];
   resourcePools: ResourcePoolDto[];
   operatingTheatres: OperatingTheatreDto[];
   serviceHours: Map<string, ServiceHoursDto[]>;
   report: ImportValidationReport;
 } {
-  const facilities = rawData.facilities as RawFacility[];
+  const rawList = (customFacilities || rawData.facilities) as unknown[];
   const hospitals: HospitalDto[] = [];
   const resourcePools: ResourcePoolDto[] = [];
   const operatingTheatres: OperatingTheatreDto[] = [];
@@ -103,13 +182,37 @@ export function importNitkFacilities(): {
 
   let maxDistanceMeters = 0;
   const facilityReports: ImportValidationReport['facilities'] = [];
+  const manifestEntries: FacilityManifestEntry[] = [];
+  const distanceBands = {
+    '0-10km': 0,
+    '10-20km': 0,
+    '20-30km': 0,
+    '30-40km': 0,
+    '>40km': 0,
+  };
 
-  facilities.forEach((f, index) => {
-    // 1. Determine stable internal hospital ID (preserve hosp-001 to hosp-005 for demo users)
-    const stableId = REVERSE_CROSSWALK[f.facility_id] ?? `hosp-${String(index + 1).padStart(3, '0')}`;
+  const seenCanonicalIds = new Set<string>();
+
+  rawList.forEach((unvalidated, _index) => {
+    // 1. Runtime schema parse (F-03)
+    const parseResult = RawFacilitySchema.safeParse(unvalidated);
+    if (!parseResult.success) {
+      console.warn(`[Importer] Quarantined facility: invalid schema`, parseResult.error.issues);
+      return;
+    }
+    const f = parseResult.data;
+
+    // 2. Derive stable, collision-free canonical identity (F-01)
+    const canonicalId = toCanonicalHospitalId(f.facility_id);
+    if (seenCanonicalIds.has(canonicalId)) {
+      console.warn(`[Importer] Quarantined duplicate canonical ID: ${canonicalId}`);
+      return;
+    }
+    seenCanonicalIds.add(canonicalId);
+
     const code = `NITK-${f.facility_id}`;
 
-    // 2. Validate coordinates and compute Haversine distance
+    // 3. Validate coordinates and compute Haversine distance (40 km regional radius)
     const lat = f.location.latitude;
     const lng = f.location.longitude;
     const validCoords =
@@ -131,39 +234,74 @@ export function importNitkFacilities(): {
       maxDistanceMeters = distanceMeters;
     }
 
-    const within30km = distanceMeters <= NITK_REGION.radiusMeters;
+    const withinRegion = distanceMeters <= NITK_REGION.radiusMeters;
+    const within30km = distanceMeters <= 30000;
+
+    // Categorize distance band
+    let band: FacilityManifestEntry['distanceBand'] = '>40km';
+    if (distanceMeters <= 10000) {
+      band = '0-10km';
+      distanceBands['0-10km']++;
+    } else if (distanceMeters <= 20000) {
+      band = '10-20km';
+      distanceBands['10-20km']++;
+    } else if (distanceMeters <= 30000) {
+      band = '20-30km';
+      distanceBands['20-30km']++;
+    } else if (distanceMeters <= 40000) {
+      band = '30-40km';
+      distanceBands['30-40km']++;
+    } else {
+      distanceBands['>40km']++;
+    }
+
+    const itemHash = computeFacilityHash(f.facility_id, f.name, lat, lng);
+
+    manifestEntries.push({
+      sourceId: f.facility_id,
+      canonicalId,
+      exactName: f.name,
+      sourceLat: lat,
+      sourceLng: lng,
+      distanceMeters: Math.round(distanceMeters),
+      distanceBand: band,
+      facilityType: f.facility_type,
+      identityHash: itemHash,
+    });
 
     facilityReports.push({
-      id: stableId,
+      id: canonicalId,
       externalId: f.facility_id,
       name: f.name,
       distanceMeters: Math.round(distanceMeters),
       validCoordinates: validCoords,
+      withinRegion,
       within30km,
     });
 
-    if (!validCoords || !within30km) {
-      console.warn(`[Importer] Facility ${f.facility_id} outside region or invalid coordinates: ${distanceMeters}m`);
+    if (!validCoords || !withinRegion) {
+      console.warn(`[Importer] Facility ${f.facility_id} outside 40km region or invalid coordinates: ${distanceMeters}m`);
       return;
     }
 
-    // 3. Project to local metric grid
+    // 4. Project to local metric grid
     const metric = projectToNitkMetric(lat, lng);
 
-    // 4. Transform capabilities and build structured capability detail
+    // 5. Transform capabilities with strict NIL preservation (Stage 3)
     const stringCapabilities: string[] = [];
     const capabilitiesDetail: Record<string, TabularCapabilityValue> = {};
 
-    for (const [capCode, capData] of Object.entries(f.capabilities)) {
+    for (const [capCode, rawCap] of Object.entries(f.capabilities)) {
+      const capData = rawCap as z.infer<typeof RawFacilityCapabilitySchema>;
       const isSupported =
-        (capData.total !== null && capData.total > 0) ||
-        (capData.available_now !== null && capData.available_now > 0) ||
+        (capData.total !== null && capData.total !== undefined && capData.total > 0) ||
+        (capData.available_now !== null && capData.available_now !== undefined && capData.available_now > 0) ||
         capData.is_open_now === true;
 
       capabilitiesDetail[capCode] = {
         supported: isSupported,
-        availableCount: capData.available_now,
-        totalCount: capData.total,
+        availableCount: capData.available_now ?? null,
+        totalCount: capData.total ?? null,
         isOpenNow: capData.is_open_now ?? (isSupported ? true : null),
         verificationStatus: 'UNVERIFIED',
       };
@@ -173,23 +311,23 @@ export function importNitkFacilities(): {
       }
     }
 
-    // 5. Construct HospitalDto
+    // 6. Construct HospitalDto with canonical ID
     const hospDto: HospitalDto = {
-      id: stableId,
+      id: canonicalId,
       code,
       name: f.name,
       address: f.address,
       location: {
-        x: Math.round(metric.x / 10), // scaled for schematic 2D views
+        x: Math.round(metric.x / 10),
         y: Math.round(metric.y / 10),
         lat,
         lng,
       },
       capabilities: stringCapabilities,
       receivingStatus: ReceivingStatus.OPEN,
-      receivingDelaySeconds: stableId === 'hosp-002' ? 90 : stableId === 'hosp-003' ? 150 : 120,
+      receivingDelaySeconds: f.facility_id === 'PADMAVATHI_SURATHKAL' ? 90 : f.facility_id === 'SRINIVAS_MUKKA' ? 150 : 120,
       version: 1,
-      updatedAt: new Date('2026-10-24T08:00:00Z').toISOString(),
+      updatedAt: new Date('2026-10-25T00:00:00Z').toISOString(),
       facilityType: f.facility_type,
       city: f.city || 'Mangaluru',
       pincode: f.pincode || '575025',
@@ -218,71 +356,46 @@ export function importNitkFacilities(): {
 
     hospitals.push(hospDto);
 
-    // 6. Generate Resource Pools for countable capabilities
-    const ventCap = f.capabilities.VENTILATORS;
-    if (ventCap && ventCap.total && ventCap.total > 0) {
-      const avail = ventCap.available_now ?? 0;
-      const total = ventCap.total;
-      resourcePools.push({
-        id: `pool-vent-${stableId}`,
-        hospitalId: stableId,
-        resourceType: ResourceType.VENTILATOR,
-        totalCount: total,
-        outOfServiceCount: 0,
-        externalOccupancy: Math.max(0, total - avail),
-        reservedCount: 0,
-        inUseCount: 0,
-        availableCount: avail,
-        version: 1,
-        updatedAt: new Date('2026-10-24T08:00:00Z').toISOString(),
-      });
-    }
+    // 7. Explicit Capability-to-Resource Pool Generation (F-04)
+    // Non-negative invariant: available <= total, outOfService = 0, externalOccupancy = total - available
+    const generatePool = (
+      type: ResourceType,
+      capKey: string,
+      poolIdPrefix: string
+    ) => {
+      const cap = f.capabilities[capKey];
+      if (cap && cap.total && cap.total > 0) {
+        const avail = Math.min(cap.total, Math.max(0, cap.available_now ?? 0));
+        const total = cap.total;
+        resourcePools.push({
+          id: `${poolIdPrefix}-${canonicalId}`,
+          hospitalId: canonicalId,
+          resourceType: type,
+          totalCount: total,
+          outOfServiceCount: 0,
+          externalOccupancy: Math.max(0, total - avail),
+          reservedCount: 0,
+          inUseCount: 0,
+          availableCount: avail,
+          version: 1,
+          updatedAt: new Date('2026-10-25T00:00:00Z').toISOString(),
+        });
+      }
+    };
 
-    const icuCap = f.capabilities.ICU;
-    if (icuCap && icuCap.total && icuCap.total > 0) {
-      const avail = icuCap.available_now ?? 0;
-      const total = icuCap.total;
-      resourcePools.push({
-        id: `pool-icu-${stableId}`,
-        hospitalId: stableId,
-        resourceType: ResourceType.ICU_BED,
-        totalCount: total,
-        outOfServiceCount: 0,
-        externalOccupancy: Math.max(0, total - avail),
-        reservedCount: 0,
-        inUseCount: 0,
-        availableCount: avail,
-        version: 1,
-        updatedAt: new Date('2026-10-24T08:00:00Z').toISOString(),
-      });
-    }
+    generatePool(ResourceType.VENTILATOR, 'VENTILATORS', 'pool-vent');
+    generatePool(ResourceType.ICU_BED, 'ICU', 'pool-icu');
+    generatePool(ResourceType.TRAUMA_BAY, 'STABILIZATION', 'pool-stab');
+    generatePool(ResourceType.CT_SCAN, 'CT_SCAN', 'pool-ct');
+    generatePool(ResourceType.CATH_LAB, 'CARDIAC_CATH', 'pool-cath');
 
-    const stabCap = f.capabilities.STABILIZATION;
-    if (stabCap && stabCap.total && stabCap.total > 0) {
-      const avail = stabCap.available_now ?? 0;
-      const total = stabCap.total;
-      resourcePools.push({
-        id: `pool-stab-${stableId}`,
-        hospitalId: stableId,
-        resourceType: ResourceType.TRAUMA_BAY,
-        totalCount: total,
-        outOfServiceCount: 0,
-        externalOccupancy: Math.max(0, total - avail),
-        reservedCount: 0,
-        inUseCount: 0,
-        availableCount: avail,
-        version: 1,
-        updatedAt: new Date('2026-10-24T08:00:00Z').toISOString(),
-      });
-    }
-
-    // 7. Operating Theatres
+    // 8. Operating Theatres
     const otCount = f.surgical_services?.operating_theatres_total ?? 0;
     if (otCount > 0) {
       for (let otIdx = 1; otIdx <= otCount; otIdx++) {
         operatingTheatres.push({
-          id: `ot-${stableId}-${otIdx}`,
-          hospitalId: stableId,
+          id: `ot-${canonicalId}-${otIdx}`,
+          hospitalId: canonicalId,
           name: `${f.name} OT-${otIdx}`,
           capabilities: stringCapabilities.filter((c) =>
             ['TRAUMA_L1', 'NEUROSURGERY', 'CARDIAC_CATH', 'STABILIZATION', 'EMERGENCY_DEPT'].includes(c)
@@ -292,38 +405,48 @@ export function importNitkFacilities(): {
       }
     }
 
-    // 8. Service Hours
-    serviceHours.set(stableId, [
+    // 9. Service Hours with strict NIL preservation
+    serviceHours.set(canonicalId, [
       {
-        hospitalId: stableId,
+        hospitalId: canonicalId,
         serviceType: 'EMERGENCY_DEPT',
-        is24x7: f.timings?.emergency_department?.includes('24x7') ?? true,
+        is24x7: Boolean(f.timings?.emergency_department?.includes('24x7') ?? true),
         timezone: 'Asia/Kolkata',
       },
       {
-        hospitalId: stableId,
+        hospitalId: canonicalId,
         serviceType: 'OPERATING_THEATRE',
-        is24x7: f.surgical_services?.emergency_surgery_supported ?? false,
+        is24x7: Boolean(f.surgical_services?.emergency_surgery_supported ?? false),
         timezone: 'Asia/Kolkata',
       },
       {
-        hospitalId: stableId,
+        hospitalId: canonicalId,
         serviceType: 'ICU',
-        is24x7: true,
+        is24x7: Boolean(f.capabilities?.ICU?.is_open_now ?? true),
         timezone: 'Asia/Kolkata',
       },
     ]);
   });
 
+  // Calculate overall dataset SHA-256 identity hash
+  const sortedManifest = [...manifestEntries].sort((a, b) => a.canonicalId.localeCompare(b.canonicalId));
+  const fullHash = createHash('sha256')
+    .update(sortedManifest.map((m) => m.identityHash).join(';'))
+    .digest('hex');
+
   const report: ImportValidationReport = {
-    totalRecords: facilities.length,
+    totalRecords: rawList.length,
     accepted: hospitals.length,
-    rejected: facilities.length - hospitals.length,
+    rejected: rawList.length - hospitals.length,
     quarantined: 0,
     maxDistanceMeters: Math.round(maxDistanceMeters),
     datasetStatus: 'synthetic_demo',
     regionId: NITK_REGION.regionId,
+    datasetVersion: NITK_REGION.datasetVersion,
     timestamp: new Date().toISOString(),
+    identityHash: fullHash,
+    distanceBands,
+    manifest: sortedManifest,
     facilities: facilityReports,
   };
 

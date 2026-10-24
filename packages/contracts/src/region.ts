@@ -13,13 +13,13 @@ export const RegionConfigSchema = z.object({
 export type RegionConfigDto = z.infer<typeof RegionConfigSchema>;
 
 export const NITK_REGION: RegionConfigDto = {
-  regionId: 'nitk-surathkal-30km',
+  regionId: 'nitk-surathkal-40km',
   regionName: 'NITK Surathkal Healthcare Emergency Region',
   centerLat: 13.0108,
   centerLng: 74.7936,
-  radiusMeters: 30000, // 30 km regional boundary
+  radiusMeters: 40000, // 40 km regional boundary
   timezone: 'Asia/Kolkata',
-  datasetVersion: '2026.10-nitk23-synthetic',
+  datasetVersion: '2026.10-nitk40km-canonical',
 };
 
 /**

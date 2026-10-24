@@ -23,10 +23,20 @@ const TrafficScenarioSchema = z.object({
 });
 
 const OriginRequestSchema = z.object({
-  lat: z.number().min(-90).max(90),
-  lng: z.number().min(-180).max(180),
+  lat: z.number().min(-90).max(90).optional(),
+  lng: z.number().min(-180).max(180).optional(),
+  validationId: z.string().optional(),
   expectedRunVersion: z.number().int().positive().optional(),
   idempotencyKey: z.string().optional(),
+});
+
+const OriginPreviewRouteSchema = z.object({
+  requested: z.object({
+    lat: z.number().min(-90).max(90),
+    lng: z.number().min(-180).max(180),
+  }),
+  expectedRunVersion: z.number().int().positive().optional(),
+  clientRequestId: z.string().optional(),
 });
 
 const HospitalSurgeScenarioSchema = z.object({
@@ -48,7 +58,31 @@ export async function registerSimulationRoutes(fastify: FastifyInstance) {
     }
   );
 
-  // Ambulance origin pin placement with 30 km boundary check and road snap (Stage 6)
+  // Ambulance origin preview endpoint (Stage 6 & 7 / Section D)
+  fastify.post(
+    '/api/v1/simulation/origin/preview',
+    { preHandler: [requireAuth] },
+    async (req: FastifyRequest, reply: FastifyReply) => {
+      const parseResult = OriginPreviewRouteSchema.safeParse(req.body);
+      if (!parseResult.success) {
+        return reply.status(400).send({
+          code: 'VALIDATION_ERROR',
+          message: 'Invalid coordinate payload for ambulance origin preview',
+          details: parseResult.error.format(),
+        });
+      }
+      const { requested, expectedRunVersion, clientRequestId } = parseResult.data;
+      const preview = store.previewAmbulanceOrigin(
+        requested.lat,
+        requested.lng,
+        expectedRunVersion,
+        clientRequestId
+      );
+      return reply.status(200).send(preview);
+    }
+  );
+
+  // Ambulance origin pin placement with 40 km boundary check, 50m road snap, and version validation (Stage 6 & 7)
   fastify.post(
     '/api/v1/simulation/origin',
     { preHandler: [requireAuth] },
@@ -62,16 +96,39 @@ export async function registerSimulationRoutes(fastify: FastifyInstance) {
         });
       }
 
-      const { lat, lng, expectedRunVersion } = parseResult.data;
+      const { lat, lng, expectedRunVersion, validationId, idempotencyKey } = parseResult.data;
       try {
-        const result = store.setAmbulanceOrigin(lat, lng, expectedRunVersion);
+        const result = store.setAmbulanceOrigin(
+          lat ?? 0,
+          lng ?? 0,
+          expectedRunVersion,
+          validationId,
+          idempotencyKey
+        );
         simulationService.reset();
         return reply.status(200).send({
           message: 'Ambulance origin updated and snapped to road network',
           ...result,
         });
       } catch (err: any) {
-        if (err.message.includes('OUT_OF_REGION')) {
+        if (
+          err.statusCode === 409 ||
+          err.code === 'VERSION_CONFLICT' ||
+          err.code === 'IDEMPOTENCY_CONFLICT' ||
+          err.code === 'EXPIRED_PREVIEW'
+        ) {
+          return reply.status(409).send({
+            code: err.code || 'VERSION_CONFLICT',
+            message: err.message,
+          });
+        }
+        if (err.code === 'NO_ROAD_ACCESS' || err.statusCode === 422) {
+          return reply.status(422).send({
+            code: 'NO_ROAD_ACCESS',
+            message: err.message,
+          });
+        }
+        if (err.code === 'OUT_OF_REGION' || err.message.includes('OUT_OF_REGION')) {
           return reply.status(400).send({
             code: 'OUT_OF_REGION',
             message: err.message,

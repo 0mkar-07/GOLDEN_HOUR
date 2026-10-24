@@ -81,6 +81,26 @@ export function runAgent2(
       }
     }
 
+    if (confirmedFullCareNeeds.includes('ICU')) {
+      const icuPool = pools.find((p) => p.resourceType === ResourceType.ICU_BED);
+      if (!icuPool || icuPool.availableCount <= 0) {
+        fullCareMatches = false;
+        missingFullCareCapabilities.push('ICU_CAPACITY_ZERO');
+        fullCareReasons.push('Zero allocatable ICU beds currently available.');
+      } else {
+        fullCareReasons.push(`${icuPool.availableCount} allocatable ICU bed(s) confirmed available.`);
+      }
+    }
+
+    if (confirmedFullCareNeeds.includes('CARDIAC_CATH')) {
+      const cathPool = pools.find((p) => p.resourceType === ResourceType.CATH_LAB);
+      if (!cathPool || cathPool.availableCount <= 0) {
+        fullCareMatches = false;
+        missingFullCareCapabilities.push('CATH_LAB_UNAVAILABLE');
+        fullCareReasons.push('Cardiac catheterization lab not currently available.');
+      }
+    }
+
     // 4. Specialist Staff Readiness for Full-Care
     if (confirmedFullCareNeeds.includes('NEUROSURGERY')) {
       const neuroStaff = staff.find((s) => s.specialty === SpecialtyType.NEUROSURGEON);
@@ -112,9 +132,18 @@ export function runAgent2(
     // 5. Stabilization Capability Matching
     let stabilizationMatches = true;
     for (const need of confirmedStabilizationNeeds) {
-      if (!hosp.capabilities.includes(need)) {
+      if (!hosp.capabilities.includes(need) && need !== 'TRAUMA_BAY') {
         stabilizationMatches = false;
         missingStabilizationCapabilities.push(need);
+      }
+    }
+
+    if (confirmedStabilizationNeeds.includes('STABILIZATION') || confirmedStabilizationNeeds.includes('TRAUMA_BAY')) {
+      const stabPool = pools.find((p) => p.resourceType === ResourceType.TRAUMA_BAY);
+      if (stabPool && stabPool.availableCount <= 0) {
+        stabilizationMatches = false;
+        missingStabilizationCapabilities.push('TRAUMA_BAY_CAPACITY_ZERO');
+        stabilizationReasons.push('All resuscitation / stabilization trauma bays currently occupied.');
       }
     }
 
