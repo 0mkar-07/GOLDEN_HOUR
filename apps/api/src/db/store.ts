@@ -14,6 +14,7 @@ import {
   AllocationState,
   UserRole,
   ResourceType,
+  CaseStatus,
 } from '@goldenhour/contracts';
 import {
   SEEDED_HOSPITALS,
@@ -245,6 +246,127 @@ class GoldenHourDatabaseStore {
 
     this.staffAvailability.set(id, updated);
     return updated;
+  }
+
+  // --- Case & Assessment Operations ---
+  public createCase(patientLabel: string, assignedAmbulanceId = 'amb-104'): EmergencyCaseDto {
+    const id = `case-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+    const now = new Date().toISOString();
+    const newCase: EmergencyCaseDto = {
+      id,
+      assignedAmbulanceId,
+      caseStatus: CaseStatus.DRAFT,
+      patientLabel,
+      assessmentVersion: 0,
+      destinationVersion: 0,
+      selectedHospitalId: null,
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.cases.set(id, newCase);
+    return newCase;
+  }
+
+  public getCase(id: string): EmergencyCaseDto | undefined {
+    return this.cases.get(id);
+  }
+
+  public listCases(ambulanceId?: string): EmergencyCaseDto[] {
+    const all = Array.from(this.cases.values());
+    if (ambulanceId) {
+      return all.filter((c) => c.assignedAmbulanceId === ambulanceId);
+    }
+    return all;
+  }
+
+  public createAssessment(
+    caseId: string,
+    observations: any,
+    proposedFullCareNeeds: string[],
+    proposedStabilizationNeeds: string[]
+  ): AssessmentDto {
+    const emergencyCase = this.cases.get(caseId);
+    if (!emergencyCase) {
+      throw new Error(`Case not found: ${caseId}`);
+    }
+
+    const nextVersion = emergencyCase.assessmentVersion + 1;
+    const assessmentId = `assess-${caseId}-v${nextVersion}`;
+    const now = new Date().toISOString();
+
+    const assessment: AssessmentDto = {
+      id: assessmentId,
+      caseId,
+      version: nextVersion,
+      observations,
+      proposedFullCareNeeds,
+      proposedStabilizationNeeds,
+      confirmedFullCareNeeds: [],
+      confirmedStabilizationNeeds: [],
+      clinicianConfirmed: false,
+      confirmedAt: null,
+      confirmedBy: null,
+      createdAt: now,
+    };
+
+    this.assessments.set(assessmentId, assessment);
+
+    // Update case assessment version and invalidate previous recommendations
+    emergencyCase.assessmentVersion = nextVersion;
+    emergencyCase.updatedAt = now;
+    this.cases.set(caseId, emergencyCase);
+
+    return assessment;
+  }
+
+  public getLatestAssessment(caseId: string): AssessmentDto | undefined {
+    const caseAssessments = Array.from(this.assessments.values())
+      .filter((a) => a.caseId === caseId)
+      .sort((a, b) => b.version - a.version);
+    return caseAssessments[0];
+  }
+
+  public confirmRequirements(
+    caseId: string,
+    assessmentVersion: number,
+    confirmedFullCareNeeds: string[],
+    confirmedStabilizationNeeds: string[],
+    confirmedByUserId: string
+  ): AssessmentDto {
+    const emergencyCase = this.cases.get(caseId);
+    if (!emergencyCase) {
+      throw new Error(`Case not found: ${caseId}`);
+    }
+
+    if (emergencyCase.assessmentVersion !== assessmentVersion) {
+      throw new Error(
+        `Version conflict: Current assessment version is v${emergencyCase.assessmentVersion}, cannot confirm stale version v${assessmentVersion}`
+      );
+    }
+
+    const assessment = this.getLatestAssessment(caseId);
+    if (!assessment || assessment.version !== assessmentVersion) {
+      throw new Error(`Assessment not found for case ${caseId} at version ${assessmentVersion}`);
+    }
+
+    const now = new Date().toISOString();
+    const updatedAssessment: AssessmentDto = {
+      ...assessment,
+      confirmedFullCareNeeds,
+      confirmedStabilizationNeeds,
+      clinicianConfirmed: true,
+      confirmedAt: now,
+      confirmedBy: confirmedByUserId,
+    };
+
+    this.assessments.set(assessment.id, updatedAssessment);
+
+    // Update case status to ASSESSED
+    emergencyCase.caseStatus = CaseStatus.ASSESSED;
+    emergencyCase.updatedAt = now;
+    this.cases.set(caseId, emergencyCase);
+
+    return updatedAssessment;
   }
 
   // --- Audit Events ---

@@ -59,6 +59,36 @@ export const EmergencyCaseSchema = z.object({
 
 export type EmergencyCaseDto = z.infer<typeof EmergencyCaseSchema>;
 
+export const CreateCaseRequestSchema = z.object({
+  patientLabel: z.string().min(1),
+  assignedAmbulanceId: z.string().default('amb-104'),
+});
+
+export type CreateCaseRequest = z.infer<typeof CreateCaseRequestSchema>;
+
+export const SubmitAssessmentRequestSchema = z.object({
+  observations: AssessmentObservationsSchema,
+});
+
+export type SubmitAssessmentRequest = z.infer<typeof SubmitAssessmentRequestSchema>;
+
+export const ConfirmRequirementsRequestSchema = z.object({
+  assessmentVersion: z.number().int().positive(),
+  confirmedFullCareNeeds: z.array(z.string()).min(1),
+  confirmedStabilizationNeeds: z.array(z.string()).min(1),
+});
+
+export type ConfirmRequirementsRequest = z.infer<typeof ConfirmRequirementsRequestSchema>;
+
+export const Agent1ProposalSchema = z.object({
+  proposedFullCareNeeds: z.array(z.string()),
+  proposedStabilizationNeeds: z.array(z.string()),
+  reasons: z.array(z.string()),
+  missingInputs: z.array(z.string()),
+});
+
+export type Agent1Proposal = z.infer<typeof Agent1ProposalSchema>;
+
 export const HospitalRequestSchema = z.object({
   id: z.string(),
   caseId: z.string(),

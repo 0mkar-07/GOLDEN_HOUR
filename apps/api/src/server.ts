@@ -4,6 +4,7 @@ import sensible from '@fastify/sensible';
 import { registerHealthRoutes } from './routes/health.js';
 import { registerAuthPlugin } from './modules/auth/plugin.js';
 import { registerHospitalRoutes } from './modules/hospitals/routes.js';
+import { registerCaseRoutes } from './modules/cases/routes.js';
 import { config } from './config.js';
 import { store } from './db/store.js';
 
@@ -29,6 +30,7 @@ export function buildServer() {
   // Register Domain Routes
   fastify.register(registerHealthRoutes);
   fastify.register(registerHospitalRoutes);
+  fastify.register(registerCaseRoutes);
 
   return fastify;
 }

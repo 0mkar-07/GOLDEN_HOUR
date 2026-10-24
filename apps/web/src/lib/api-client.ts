@@ -8,6 +8,12 @@ import {
   UpdateHospitalRequest,
   UpdateResourcePoolRequest,
   UpdateStaffAvailabilityRequest,
+  EmergencyCaseDto,
+  AssessmentDto,
+  CreateCaseRequest,
+  SubmitAssessmentRequest,
+  ConfirmRequirementsRequest,
+  Agent1Proposal,
 } from '@goldenhour/contracts';
 
 export class ApiError extends Error {
@@ -117,5 +123,51 @@ export const apiClient = {
       method: 'PATCH',
       body: JSON.stringify(updates),
     });
+  },
+
+  // Cases & Assessments API
+  async createCase(payload: CreateCaseRequest): Promise<{ case: EmergencyCaseDto }> {
+    return request<{ case: EmergencyCaseDto }>('/api/v1/cases', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  async getCase(id: string): Promise<{ case: EmergencyCaseDto; latestAssessment: AssessmentDto | null }> {
+    return request<{ case: EmergencyCaseDto; latestAssessment: AssessmentDto | null }>(`/api/v1/cases/${id}`, {
+      method: 'GET',
+    });
+  },
+
+  async listCases(): Promise<{ cases: EmergencyCaseDto[] }> {
+    return request<{ cases: EmergencyCaseDto[] }>('/api/v1/cases', {
+      method: 'GET',
+    });
+  },
+
+  async submitAssessment(
+    caseId: string,
+    payload: SubmitAssessmentRequest
+  ): Promise<{ assessment: AssessmentDto; agent1Proposal: Agent1Proposal }> {
+    return request<{ assessment: AssessmentDto; agent1Proposal: Agent1Proposal }>(
+      `/api/v1/cases/${caseId}/assessments`,
+      {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }
+    );
+  },
+
+  async confirmRequirements(
+    caseId: string,
+    payload: ConfirmRequirementsRequest
+  ): Promise<{ assessment: AssessmentDto; message: string }> {
+    return request<{ assessment: AssessmentDto; message: string }>(
+      `/api/v1/cases/${caseId}/confirm-requirements`,
+      {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }
+    );
   },
 };

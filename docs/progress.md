@@ -1,9 +1,9 @@
 # GoldenHour Implementation Progress
 
 ## Project State
-- **Status:** Phase 3 Complete & Verified
-- **Current Phase:** Phase 3 (Hospital live data vertical slice) Gate PASSED
-- **Next Phase:** Phase 4 (Ambulance case entry and Agent 1)
+- **Status:** Phase 4 Complete & Verified
+- **Current Phase:** Phase 4 (Ambulance case entry and Agent 1) Gate PASSED
+- **Next Phase:** Phase 5 (Agent 2, Agent 3, and routing)
 - **Active Spec:** `docs/implementation-plan.md`
 
 ## Milestones Log
@@ -18,38 +18,44 @@
 - Enforced session cookies, role guards, and cross-hospital isolation (`403 Forbidden`).
 
 ### 2026-10-24 — Phase 3: Hospital Live Data Vertical Slice
-- **Strict Server-Side Inventory Computation:**
-  - Implemented the plan's exact invariant formula:
-    $$\text{Available} = \text{Total} - \text{OutOfService} - \text{ExternalOccupancy} - \text{ActiveReserved} - \text{ActiveInUse}$$
-  - Prevented arbitrary client-supplied availability counts.
-  - Enforced non-negative count constraints on total, out-of-service, and external occupancy.
-  - Enforced capacity lower-bound check: Total cannot be reduced below current committed use ($$\text{OutOfService} + \text{External} + \text{Reserved} + \text{InUse} \le \text{Total}$$), returning `400 INVARIANT_VIOLATION`.
-  - Added optimistic concurrency with version checks: Stale updates return `409 VERSION_CONFLICT`.
+- Strict server-side inventory computation formula: $\text{Available} = \text{Total} - \text{OOS} - \text{Ext} - \text{Reserved} - \text{InUse}$.
+- Capacity invariants, non-negative validation, and optimistic concurrency version conflict checking (`409 Conflict`).
+- Live Hospital command portal with resource bars, staff readiness slots, and receiving status controls.
 
-- **Live Staff Readiness & Receiving Status:**
-  - Endpoints `PATCH /api/v1/staff-availability/:id` and `PATCH /api/v1/hospitals/:id`.
-  - Enforces hospital ownership checks: Staff of Hospital A cannot mutate Hospital B.
-  - Audit logging for all hospital metadata, resource pool, and staff adjustments.
+### 2026-10-24 — Phase 4: Ambulance Case Entry and Agent 1
+- **Agent 1 Requirements Interpretation Module (`apps/api/src/modules/agents/agent1.ts`):**
+  - Deterministic, versioned rule module (`v1.0.0-deterministic`).
+  - Proposes full-care requirements (for definitive destination A) vs. immediate stabilization requirements (for dynamic backups B/C).
+  - Explicit missing inputs detection: Omitted or unknown vital signs (e.g. unassessed GCS, SpO2, or Blood Pressure) are actively surfaced in `missingInputs` rather than silently assumed normal.
+  - Generates transparent, human-readable clinical rationale.
 
-- **Frontend Hospital Dashboard (`HospitalPage.tsx`):**
-  - Integrated directly with `apiClient` without hardcoded arrays.
-  - Displays hospital metadata, receiving status toggle (`OPEN`, `RESTRICTED`, `DIVERT_ALL`), and intake delay controls.
-  - Real-time resource pool cards with multi-color capacity bars (Available, Reserved, In Use, External/OOS).
-  - Modal form for editing Total, Out-of-service, and External occupancy with projected availability preview and inline conflict handling.
-  - Staff readiness slots manager with quick increment/decrement controls.
-  - Survives browser page reload by fetching authoritative server state.
+- **Case Management & Confirmation APIs (`apps/api/src/modules/cases/routes.ts`):**
+  - `POST /api/v1/cases`: Creates case in `DRAFT` status with `assessmentVersion: 0`.
+  - `GET /api/v1/cases/:id`: Fetches case and its latest assessment.
+  - `POST /api/v1/cases/:id/assessments`: Submits observations, runs Agent 1, increments `assessmentVersion`, and stores proposed requirements.
+  - `POST /api/v1/cases/:id/confirm-requirements`: Clinician confirms/modifies full-care and stabilization needs with actor and timestamp; transitions case to `ASSESSED` status.
+  - Stale confirmation submissions return `409 VERSION_CONFLICT`.
+
+- **Frontend Ambulance Mobile Terminal (`apps/web/src/pages/AmbulancePage.tsx`):**
+  - Preset loader with 3 clinical scenarios:
+    1. Severe TBI & Polytrauma (High-Speed Collision)
+    2. Acute STEMI / Anterior Wall Infarction
+    3. Incomplete Assessment (Explicit Unknown Vitals)
+  - Telemetry entry with vitals inputs and explicit unknown support.
+  - Agent 1 reasoning card with clinical rationale and missing inputs alert banner.
+  - Clinician tag editor allowing additions/removals before confirming.
+  - One-click clinician confirmation locking assessment version and showing timestamped clinician signature.
 
 - **Verification Checks:**
   - `pnpm typecheck`: Passed (4/4 projects, 0 errors).
-  - `pnpm test`: Passed (21/21 tests across 5 test suites).
-  - Backend integration tests (`apps/api/test/hospital-slice.test.ts`):
-    - Availability formula accurately enforced.
-    - Total capacity update recalculates availability server-side.
-    - Version conflict returns 409.
-    - Reducing capacity below committed use returns 400.
-    - Negative counts rejected with 400.
-    - Staff slot and receiving status updates persist and record audit events.
-  - Frontend integration tests (`apps/web/src/test/HospitalPage.test.tsx`):
-    - Live facility details, calculated availability, and edit modal verified.
+  - `pnpm test`: Passed (**28/28 tests passing across 7 test suites**).
+  - Backend integration tests (`apps/api/test/agent1-case.test.ts`):
+    - Case creation in `DRAFT`.
+    - Polytrauma / TBI requirement interpretation.
+    - Explicit unknown detection.
+    - Clinician confirmation transitions case to `ASSESSED`.
+    - Stale confirmation rejection (`409 VERSION_CONFLICT`).
+  - Frontend integration tests (`apps/web/src/test/AmbulancePage.test.tsx`):
+    - Case entry form and Agent 1 proposal panel verified.
 
-- **Gate Acceptance:** All Phase 3 criteria met. Editing a hospital updates database/store state and survives reload; negative or conflicting updates are rejected.
+- **Gate Acceptance:** All Phase 4 criteria met. A clinician can create, reload, edit, and confirm a case; Agent 1 never silently treats missing information as normal.

@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { render, screen, act } from '@testing-library/react';
 import App from '../App';
 
-// Mock fetch for health badge and auth me
+// Mock fetch for health badge, auth me, and cases
 global.fetch = vi.fn().mockImplementation((url: string) => {
   if (url.includes('/api/v1/auth/me')) {
     return Promise.resolve({
@@ -21,6 +21,15 @@ global.fetch = vi.fn().mockImplementation((url: string) => {
             createdAt: new Date().toISOString(),
           },
         }),
+    });
+  }
+
+  if (url.includes('/api/v1/cases')) {
+    return Promise.resolve({
+      ok: true,
+      status: 200,
+      headers: new Headers({ 'content-type': 'application/json' }),
+      json: () => Promise.resolve({ cases: [] }),
     });
   }
 
@@ -62,6 +71,6 @@ describe('GoldenHour Web Shell (Phase 2)', () => {
     });
 
     expect(screen.getByText('Ambulance Mobile Terminal')).toBeInTheDocument();
-    expect(screen.getByText('Primary Destination (Hospital A)')).toBeInTheDocument();
+    expect(screen.getByText(/Patient Telemetry & Presenting Symptoms/i)).toBeInTheDocument();
   });
 });
