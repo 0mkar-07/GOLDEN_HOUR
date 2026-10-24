@@ -57,27 +57,37 @@ class GoldenHourDatabaseStore {
   public recommendations: Map<string, RecommendationDto> = new Map();
   public trafficOverrides: Record<string, number> = {};
   public ambulancePosition: {
+    ambulanceId: string;
     x: number;
     y: number;
     lat: number;
     lng: number;
     speed: number;
+    speedMps?: number | null;
     heading: number;
+    headingDegrees?: number | null;
     accuracyMeters?: number;
-    source: 'SIMULATED' | 'DEVICE_GPS';
+    source: 'SIMULATED' | 'DEVICE_GPS' | 'REPLAY';
+    sourceGeneration: number;
     serverSequence: number;
     observedAt: string;
+    receivedAt?: string;
   } = {
+    ambulanceId: 'amb-104',
     x: 120,
     y: 150,
     lat: 40.71,
     lng: -74.02,
     speed: 0,
+    speedMps: 0,
     heading: 85,
+    headingDegrees: 85,
     accuracyMeters: 5,
     source: 'SIMULATED',
+    sourceGeneration: 1,
     serverSequence: 1,
     observedAt: new Date().toISOString(),
+    receivedAt: new Date().toISOString(),
   };
   public auditEvents: AuditEventDto[] = [];
   public outboxEvents: OutboxEventDto[] = [];
@@ -88,6 +98,10 @@ class GoldenHourDatabaseStore {
     speedMultiplier: 1.0,
     simulatedSeconds: 0,
     scenarioStep: 'INITIAL',
+    runVersion: 1,
+    assignedAmbulanceId: 'amb-104',
+    completed: false,
+    checkpointCount: 0,
     updatedAt: new Date().toISOString(),
   };
   public systemSettings: SystemSettingsDto = {
@@ -419,44 +433,71 @@ class GoldenHourDatabaseStore {
     return this.recommendations.get(caseId);
   }
 
-  public updateAmbulancePosition(x: number, y: number, lat: number, lng: number): void {
+  public updateAmbulancePosition(
+    x: number,
+    y: number,
+    lat: number,
+    lng: number,
+    speedKmh: number = 45,
+    headingDeg: number = 85
+  ): void {
+    const normalizedHeading = ((headingDeg % 360) + 360) % 360;
+    const nowIso = new Date().toISOString();
+    const currentGen = this.ambulancePosition.source === 'SIMULATED'
+      ? this.ambulancePosition.sourceGeneration
+      : this.ambulancePosition.sourceGeneration + 1;
+
     this.ambulancePosition = {
+      ambulanceId: 'amb-104',
       x,
       y,
       lat,
       lng,
-      speed: 45,
-      heading: this.ambulancePosition.heading,
+      speed: Math.round(speedKmh),
+      speedMps: Number((speedKmh / 3.6).toFixed(2)),
+      heading: Math.round(normalizedHeading),
+      headingDegrees: normalizedHeading,
       accuracyMeters: 5,
       source: 'SIMULATED',
+      sourceGeneration: currentGen,
       serverSequence: this.ambulancePosition.serverSequence + 1,
-      observedAt: new Date().toISOString(),
+      observedAt: nowIso,
+      receivedAt: nowIso,
     };
   }
 
   public submitDevicePosition(
     lat: number,
     lng: number,
-    speed: number = 0,
-    heading: number = 0,
-    accuracyMeters?: number
+    speedKmh: number = 0,
+    headingDeg: number = 0,
+    accuracyMeters?: number,
+    observedAt?: string
   ) {
+    const normalizedHeading = ((headingDeg % 360) + 360) % 360;
+    const nowIso = new Date().toISOString();
+    const currentGen = this.ambulancePosition.source === 'DEVICE_GPS'
+      ? this.ambulancePosition.sourceGeneration
+      : this.ambulancePosition.sourceGeneration + 1;
+
     this.ambulancePosition = {
+      ambulanceId: 'amb-104',
       x: 0,
       y: 0,
       lat,
       lng,
-      speed,
-      heading,
-      accuracyMeters,
+      speed: Math.round(speedKmh),
+      speedMps: Number((speedKmh / 3.6).toFixed(2)),
+      heading: Math.round(normalizedHeading),
+      headingDegrees: normalizedHeading,
+      accuracyMeters: accuracyMeters ?? 5,
       source: 'DEVICE_GPS',
+      sourceGeneration: currentGen,
       serverSequence: this.ambulancePosition.serverSequence + 1,
-      observedAt: new Date().toISOString(),
+      observedAt: observedAt || nowIso,
+      receivedAt: nowIso,
     };
-    return {
-      ambulanceId: 'amb-104',
-      ...this.ambulancePosition,
-    };
+    return this.ambulancePosition;
   }
 
   public setTrafficOverride(edgeId: string, multiplier: number): void {
@@ -1433,16 +1474,21 @@ class GoldenHourDatabaseStore {
 
     // Reset ambulance position
     this.ambulancePosition = {
+      ambulanceId: 'amb-104',
       x: 120,
       y: 150,
       lat: 40.71,
       lng: -74.02,
       speed: 0,
+      speedMps: 0,
       heading: 85,
+      headingDegrees: 85,
       accuracyMeters: 5,
       source: 'SIMULATED',
+      sourceGeneration: 1,
       serverSequence: 1,
       observedAt: new Date().toISOString(),
+      receivedAt: new Date().toISOString(),
     };
 
     this.recordAudit({

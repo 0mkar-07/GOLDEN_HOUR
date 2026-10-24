@@ -140,7 +140,7 @@ export const Simulation3DView: React.FC<Simulation3DViewProps> = ({ activeCaseId
     try {
       await apiClient.injectTrafficScenario('edge-1', 3.5);
       fetchState();
-      showToast('Traffic congestion (+350%) injected on Westside Expressway');
+      showToast('Traffic congestion (+350%) injected on Westside Expressway (3.5x multiplier)');
     } catch (err: any) {
       showToast(`Error: ${err.message}`);
     }
@@ -199,6 +199,7 @@ export const Simulation3DView: React.FC<Simulation3DViewProps> = ({ activeCaseId
     speedMultiplier: 1.0,
     simulatedSeconds: 0,
   };
+  const activeRoute = simState?.activeRoute;
 
   return (
     <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-lg space-y-4 p-5">
@@ -208,7 +209,7 @@ export const Simulation3DView: React.FC<Simulation3DViewProps> = ({ activeCaseId
           <div className="flex items-center gap-2">
             <h2 className="text-base font-bold text-white flex items-center gap-2">
               <Compass className="w-5 h-5 text-purple-400" />
-              Connected 3D Digital Twin & Live Network Simulation
+              Connected 3D Digital Twin & Live Network Simulation (Isometric Schematic)
             </h2>
             <span
               className={`text-xs px-2.5 py-0.5 rounded-full font-semibold ${
@@ -380,18 +381,41 @@ export const Simulation3DView: React.FC<Simulation3DViewProps> = ({ activeCaseId
             );
           })}
 
-          {/* Active Route Glow Polyline */}
-          <line
-            x1={ambulancePosition.x}
-            y1={ambulancePosition.y}
-            x2={350}
-            y2={150}
-            stroke="#10b981"
-            strokeWidth="3"
-            strokeDasharray="6 4"
-            opacity="0.8"
-            filter="url(#glow)"
-          />
+          {/* Active Route Glow Polyline (Dynamic destination from activeRoute) */}
+          {activeRoute && activeRoute.pathNodeIds?.length > 1 ? (
+            activeRoute.pathNodeIds.map((nodeId: string, idx: number) => {
+              if (idx === 0) return null;
+              const prevNode = roadGraph?.nodes?.find((n: any) => n.id === activeRoute.pathNodeIds[idx - 1]);
+              const currNode = roadGraph?.nodes?.find((n: any) => n.id === nodeId);
+              if (!prevNode || !currNode) return null;
+              return (
+                <line
+                  key={`route-seg-${idx}`}
+                  x1={prevNode.x}
+                  y1={prevNode.y}
+                  x2={currNode.x}
+                  y2={currNode.y}
+                  stroke="#10b981"
+                  strokeWidth="3.5"
+                  strokeDasharray="6 4"
+                  opacity="0.85"
+                  filter="url(#glow)"
+                />
+              );
+            })
+          ) : (
+            <line
+              x1={ambulancePosition.x}
+              y1={ambulancePosition.y}
+              x2={roadGraph?.nodes?.find((n: any) => n.id === (activeRoute?.toNodeId || 'node-hosp-a'))?.x ?? 350}
+              y2={roadGraph?.nodes?.find((n: any) => n.id === (activeRoute?.toNodeId || 'node-hosp-a'))?.y ?? 150}
+              stroke="#10b981"
+              strokeWidth="3"
+              strokeDasharray="6 4"
+              opacity="0.8"
+              filter="url(#glow)"
+            />
+          )}
 
           {/* Contingency Standby Arc to Backup B */}
           <path

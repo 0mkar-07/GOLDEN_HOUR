@@ -42,6 +42,7 @@ describe('Stage 2 & 3 — Live Geographic Map & MapPanel', () => {
     speed: 35,
     heading: 90,
     source: 'SIMULATED',
+    sourceGeneration: 1,
     serverSequence: 5,
     observedAt: new Date().toISOString(),
   };

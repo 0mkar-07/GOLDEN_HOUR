@@ -2,7 +2,9 @@ import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import { simulationService } from './service.js';
 import { requireAuth, requireRole } from '../auth/plugin.js';
-import { UserRole } from '@goldenhour/contracts';
+import { UserRole, SourceSwitchRequestSchema } from '@goldenhour/contracts';
+import { store } from '../../db/store.js';
+import { SEEDED_ROAD_GRAPH } from '@goldenhour/scenario-fixtures';
 
 const SpeedRequestSchema = z.object({
   speedMultiplier: z.number().min(0.5).max(10).default(1.0),
@@ -27,12 +29,16 @@ const DecompensationScenarioSchema = z.object({
 
 export async function registerSimulationRoutes(fastify: FastifyInstance) {
   // Public state endpoint (accessible to all authenticated roles for scene rendering)
-  fastify.get('/api/v1/simulation/state', async (_req: FastifyRequest, reply: FastifyReply) => {
-    const state = simulationService.getSimulationState();
-    return reply.status(200).send(state);
-  });
+  fastify.get(
+    '/api/v1/simulation/state',
+    { preHandler: [requireAuth] },
+    async (_req: FastifyRequest, reply: FastifyReply) => {
+      const state = simulationService.getSimulationState();
+      return reply.status(200).send(state);
+    }
+  );
 
-  // Admin-only controls
+  // Simulation controls (Admin only)
   fastify.register(async (adminScope) => {
     adminScope.addHook('preHandler', requireAuth);
     adminScope.addHook('preHandler', requireRole([UserRole.ADMIN]));
@@ -49,8 +55,19 @@ export async function registerSimulationRoutes(fastify: FastifyInstance) {
     });
 
     adminScope.post('/api/v1/simulation/step', async (req: FastifyRequest, reply: FastifyReply) => {
+      const runState = simulationService.getSimulationState().simulationRun;
+      if (runState.running) {
+        simulationService.pause();
+      }
       const parseResult = StepRequestSchema.safeParse(req.body ?? {});
-      const stepSec = parseResult.success ? parseResult.data.stepSeconds : 5;
+      if (!parseResult.success) {
+        return reply.status(400).send({
+          code: 'VALIDATION_ERROR',
+          message: 'Invalid stepSeconds (must be positive number <= 60)',
+          details: parseResult.error.format(),
+        });
+      }
+      const stepSec = parseResult.data.stepSeconds;
       const run = simulationService.step(stepSec);
       return reply.status(200).send({ message: `Stepped forward ${stepSec}s`, simulationRun: run });
     });
@@ -72,11 +89,47 @@ export async function registerSimulationRoutes(fastify: FastifyInstance) {
       return reply.status(200).send({ message: 'Simulation reset to origin', simulationRun: run });
     });
 
+    adminScope.post('/api/v1/simulation/source', async (req: FastifyRequest, reply: FastifyReply) => {
+      const parseResult = SourceSwitchRequestSchema.safeParse(req.body);
+      if (!parseResult.success) {
+        return reply.status(400).send({
+          code: 'VALIDATION_ERROR',
+          message: 'Invalid source switch payload',
+          details: parseResult.error.format(),
+        });
+      }
+      const { targetSource } = parseResult.data;
+      if (targetSource === 'DEVICE_GPS') {
+        simulationService.pause();
+        store.ambulancePosition.source = 'DEVICE_GPS';
+      } else if (targetSource === 'SIMULATED') {
+        store.ambulancePosition.source = 'SIMULATED';
+      }
+      store.ambulancePosition.sourceGeneration += 1;
+      return reply.status(200).send({
+        success: true,
+        source: store.ambulancePosition.source,
+        sourceGeneration: store.ambulancePosition.sourceGeneration,
+      });
+    });
+
     adminScope.post('/api/v1/simulation/scenarios/traffic', async (req: FastifyRequest, reply: FastifyReply) => {
       const parseResult = TrafficScenarioSchema.safeParse(req.body ?? {});
-      const { edgeId, multiplier } = parseResult.success
-        ? parseResult.data
-        : { edgeId: 'edge-3', multiplier: 3.0 };
+      if (!parseResult.success) {
+        return reply.status(400).send({
+          code: 'VALIDATION_ERROR',
+          message: 'Invalid traffic scenario payload',
+          details: parseResult.error.format(),
+        });
+      }
+      const { edgeId, multiplier } = parseResult.data;
+      const edgeExists = SEEDED_ROAD_GRAPH.edges.some((e) => e.id === edgeId);
+      if (!edgeExists) {
+        return reply.status(400).send({
+          code: 'EDGE_NOT_FOUND',
+          message: `Road edge ${edgeId} not found in road network graph`,
+        });
+      }
 
       simulationService.injectTraffic(edgeId, multiplier, req.user!.id);
       return reply.status(200).send({
@@ -86,7 +139,21 @@ export async function registerSimulationRoutes(fastify: FastifyInstance) {
 
     adminScope.post('/api/v1/simulation/scenarios/hospital-surge', async (req: FastifyRequest, reply: FastifyReply) => {
       const parseResult = HospitalSurgeScenarioSchema.safeParse(req.body ?? {});
-      const { hospitalId } = parseResult.success ? parseResult.data : { hospitalId: 'hosp-001' };
+      if (!parseResult.success) {
+        return reply.status(400).send({
+          code: 'VALIDATION_ERROR',
+          message: 'Invalid hospital surge payload',
+          details: parseResult.error.format(),
+        });
+      }
+      const { hospitalId } = parseResult.data;
+      const hospitalExists = store.getHospital(hospitalId);
+      if (!hospitalExists) {
+        return reply.status(400).send({
+          code: 'HOSPITAL_NOT_FOUND',
+          message: `Hospital ${hospitalId} does not exist`,
+        });
+      }
 
       simulationService.injectHospitalSpike(hospitalId, req.user!.id);
       return reply.status(200).send({

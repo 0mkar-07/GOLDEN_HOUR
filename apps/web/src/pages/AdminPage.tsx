@@ -526,6 +526,7 @@ export const AdminPage: React.FC = () => {
                 speed: overview?.ambulanceTelemetry?.speed || 0,
                 heading: overview?.ambulanceTelemetry?.heading || 85,
                 source: 'SIMULATED',
+                sourceGeneration: 1,
                 serverSequence: overview?.ambulanceTelemetry?.serverSequence || 1,
                 observedAt: overview?.ambulanceTelemetry?.observedAt || new Date().toISOString(),
               }}

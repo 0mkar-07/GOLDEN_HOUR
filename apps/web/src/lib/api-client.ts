@@ -442,6 +442,14 @@ export const apiClient = {
   },
 
   // Case Geographic Routes API (Stage 2)
+  async getPreviewRoutes(): Promise<{
+    positionSequence: number;
+    routes: Record<string, any>;
+    generatedAt: string;
+  }> {
+    return request<any>('/api/v1/routing/preview-routes', { method: 'GET' });
+  },
+
   async getCaseRoutes(caseId: string): Promise<{
     caseId: string;
     positionSequence: number;

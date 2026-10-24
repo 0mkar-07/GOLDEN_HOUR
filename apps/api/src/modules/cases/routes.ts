@@ -15,6 +15,7 @@ import { runAgent3 } from '../agents/agent3.js';
 import { routingProvider, geographicRoutingProvider } from '../routing/index.js';
 import { getIO } from '../realtime/index.js';
 import { SEEDED_ROAD_GRAPH } from '@goldenhour/scenario-fixtures';
+import { simulationService } from '../simulation/service.js';
 
 interface IdParams {
   id: string;
@@ -305,6 +306,32 @@ export async function registerCaseRoutes(fastify: FastifyInstance) {
     }
   );
 
+  // 8.5 Get Active Preview Routes (even before case creation or recommendation)
+  fastify.get(
+    '/api/v1/routing/preview-routes',
+    { preHandler: [requireAuth] },
+    async (_req, reply: FastifyReply) => {
+      const hospitals = store.listHospitals().slice(0, 3);
+      const currentPos = store.ambulancePosition;
+      const routeResults: Record<string, any> = {};
+
+      for (const target of hospitals) {
+        const route = await geographicRoutingProvider.calculateGeographicRoute(
+          { lat: currentPos.lat, lng: currentPos.lng },
+          { hospitalId: target.id, hospitalName: target.name, lat: target.location.lat, lng: target.location.lng },
+          store.trafficOverrides
+        );
+        routeResults[target.id] = route;
+      }
+
+      return reply.status(200).send({
+        positionSequence: currentPos.serverSequence,
+        routes: routeResults,
+        generatedAt: new Date().toISOString(),
+      });
+    }
+  );
+
   // 9. Get Case Geographic Routes (Google Routes / Simulated Road Geometry)
   fastify.get<{ Params: IdParams }>(
     '/api/v1/cases/:id/routes',
@@ -373,13 +400,20 @@ export async function registerCaseRoutes(fastify: FastifyInstance) {
         });
       }
 
-      const { lat, lng, speed, heading, accuracyMeters } = parseResult.data;
+      const { lat, lng, speed, heading, accuracyMeters, observedAt } = parseResult.data;
+
+      // Exclusive position producer enforcement (Stage 1.3): Live GPS pauses simulation
+      if (simulationService.getSimulationState().simulationRun.running) {
+        simulationService.pause();
+      }
+
       const updatedPosition = store.submitDevicePosition(
         lat,
         lng,
         speed || 0,
         heading || 0,
-        accuracyMeters
+        accuracyMeters,
+        observedAt
       );
 
       const io = getIO();

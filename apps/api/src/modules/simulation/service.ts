@@ -20,6 +20,10 @@ class SimulationService {
   private activeRoute: RouteResult | null = null;
   private currentEdgeIndex = 0;
   private distanceOnCurrentEdge = 0; // meters traveled on current edge
+  private runVersion = 1;
+  private completed = false;
+  private checkpointCount = 0;
+  private lastWallTime: number | null = null;
 
   constructor() {
     this.routingProvider = new SimulatedRoutingProvider(SEEDED_ROAD_GRAPH);
@@ -40,11 +44,15 @@ class SimulationService {
         speedMultiplier: this.speedMultiplier,
         simulatedSeconds: this.simulatedSeconds,
         scenarioStep: this.getScenarioStep(),
+        runVersion: this.runVersion,
+        assignedAmbulanceId: 'amb-104',
+        completed: this.completed,
+        checkpointCount: this.checkpointCount,
         updatedAt: new Date().toISOString(),
       },
       ambulancePosition: {
-        ambulanceId: 'amb-101',
         ...store.ambulancePosition,
+        ambulanceId: 'amb-104',
       },
       roadGraph: SEEDED_ROAD_GRAPH,
       activeRoute: this.activeRoute,
@@ -55,16 +63,22 @@ class SimulationService {
   public play(speedMultiplier = 1.0): SimulationRunDto {
     this.speedMultiplier = Math.max(0.5, Math.min(10, speedMultiplier));
     this.running = true;
+    this.completed = false;
+    this.lastWallTime = Date.now();
 
     if (this.ticker) {
       clearInterval(this.ticker);
     }
 
-    // Server ticker runs every 500ms
+    // Monotonic server ticker runs every 500ms
     const intervalMs = 500;
     this.ticker = setInterval(() => {
-      // Delta seconds scaled by speed multiplier
-      const deltaSec = (intervalMs / 1000) * this.speedMultiplier;
+      const now = Date.now();
+      const elapsedWallSec = this.lastWallTime ? (now - this.lastWallTime) / 1000 : 0.5;
+      this.lastWallTime = now;
+      // Bounded catch-up cap to prevent catch-up teleporting
+      const boundedElapsed = Math.min(2.0, Math.max(0.05, elapsedWallSec));
+      const deltaSec = boundedElapsed * this.speedMultiplier;
       this.advanceClock(deltaSec);
     }, intervalMs);
 
@@ -74,6 +88,7 @@ class SimulationService {
 
   public pause(): SimulationRunDto {
     this.running = false;
+    this.lastWallTime = null;
     if (this.ticker) {
       clearInterval(this.ticker);
       this.ticker = null;
@@ -84,6 +99,7 @@ class SimulationService {
 
   public step(stepSeconds = 5): SimulationRunDto {
     this.advanceClock(stepSeconds);
+    this.checkpointCount += 1;
     this.broadcastSimulationState();
     return this.getSimulationState().simulationRun;
   }
@@ -102,6 +118,8 @@ class SimulationService {
     this.currentEdgeIndex = 0;
     this.distanceOnCurrentEdge = 0;
     this.activeRoute = null;
+    this.completed = false;
+    this.runVersion += 1;
 
     // Reset ambulance position to scene start
     store.updateAmbulancePosition(120, 150, 40.71, -74.02);
@@ -110,9 +128,10 @@ class SimulationService {
   }
 
   /**
-   * Deterministic movement along current route edges
+   * Deterministic movement across multiple directed route edges (Stage 2.3)
    */
   public advanceClock(deltaSeconds: number): void {
+    if (this.completed) return;
     this.simulatedSeconds += deltaSeconds;
 
     // 1. Resolve active route from case or default hospital A route
@@ -123,60 +142,83 @@ class SimulationService {
       return;
     }
 
-    const currentEdgeId = this.activeRoute.edgeIds[this.currentEdgeIndex];
-    const edge = SEEDED_ROAD_GRAPH.edges.find((e) => e.id === currentEdgeId);
-    if (!edge) {
-      return;
-    }
+    let remainingTime = deltaSeconds;
 
-    // Speed in meters per second (default 50 km/h = ~13.89 m/s)
-    const trafficMultiplier = store.trafficOverrides[edge.id] ?? edge.trafficMultiplier;
-    const speedMps = (edge.speedKmh / 3.6) / trafficMultiplier;
-    const distanceDelta = speedMps * deltaSeconds;
+    // Multi-edge consumption loop: consume remaining time across each traversed segment and its own speed
+    while (remainingTime > 0 && this.currentEdgeIndex < this.activeRoute.edgeIds.length) {
+      const fromNodeId = this.activeRoute.pathNodeIds[this.currentEdgeIndex];
+      const toNodeId = this.activeRoute.pathNodeIds[this.currentEdgeIndex + 1];
+      const currentEdgeId = this.activeRoute.edgeIds[this.currentEdgeIndex];
+      const edge = SEEDED_ROAD_GRAPH.edges.find((e) => e.id === currentEdgeId);
+      if (!edge || !fromNodeId || !toNodeId) break;
 
-    this.distanceOnCurrentEdge += distanceDelta;
+      const trafficMultiplier = store.trafficOverrides[edge.id] ?? edge.trafficMultiplier ?? 1.0;
+      const speedMps = (edge.speedKmh / 3.6) / trafficMultiplier;
+      const segmentTotalMeters = edge.distanceMeters;
+      const remainingDistanceOnSegment = Math.max(0, segmentTotalMeters - this.distanceOnCurrentEdge);
 
-    // Move to next edge if edge completed
-    if (this.distanceOnCurrentEdge >= edge.distanceMeters) {
-      if (this.currentEdgeIndex < this.activeRoute.edgeIds.length - 1) {
-        this.distanceOnCurrentEdge -= edge.distanceMeters;
-        this.currentEdgeIndex += 1;
+      const timeToFinishSegment = speedMps > 0 ? remainingDistanceOnSegment / speedMps : 9999;
+
+      if (remainingTime < timeToFinishSegment) {
+        // Advance within current segment
+        this.distanceOnCurrentEdge += speedMps * remainingTime;
+        remainingTime = 0;
       } else {
-        // Reached end of route
-        this.distanceOnCurrentEdge = edge.distanceMeters;
-        this.onReachedDestination();
+        // Finish this segment and advance to next
+        remainingTime -= timeToFinishSegment;
+        if (this.currentEdgeIndex < this.activeRoute.edgeIds.length - 1) {
+          this.currentEdgeIndex += 1;
+          this.distanceOnCurrentEdge = 0;
+        } else {
+          // Reached final destination
+          this.distanceOnCurrentEdge = segmentTotalMeters;
+          remainingTime = 0;
+          this.onReachedDestination();
+          break;
+        }
       }
     }
 
-    // Interpolate coordinates on current edge
-    const activeEdge = SEEDED_ROAD_GRAPH.edges.find(
-      (e) => e.id === this.activeRoute!.edgeIds[this.currentEdgeIndex]
-    )!;
-    const fromNode = SEEDED_ROAD_GRAPH.nodes.find((n) => n.id === activeEdge.from)!;
-    const toNode = SEEDED_ROAD_GRAPH.nodes.find((n) => n.id === activeEdge.to)!;
+    // Interpolate coordinates along the active directed segment
+    const fromNodeId = this.activeRoute.pathNodeIds[this.currentEdgeIndex];
+    const toNodeId = this.activeRoute.pathNodeIds[this.currentEdgeIndex + 1];
+    const currentEdgeId = this.activeRoute.edgeIds[this.currentEdgeIndex];
+    const edge = SEEDED_ROAD_GRAPH.edges.find((e) => e.id === currentEdgeId);
 
-    const progressFraction = Math.min(1, Math.max(0, this.distanceOnCurrentEdge / activeEdge.distanceMeters));
-    const newX = Math.round(fromNode.x + progressFraction * (toNode.x - fromNode.x));
-    const newY = Math.round(fromNode.y + progressFraction * (toNode.y - fromNode.y));
-    const newLat = Number((fromNode.lat + progressFraction * (toNode.lat - fromNode.lat)).toFixed(6));
-    const newLng = Number((fromNode.lng + progressFraction * (toNode.lng - fromNode.lng)).toFixed(6));
+    if (fromNodeId && toNodeId && edge) {
+      const fromNode = SEEDED_ROAD_GRAPH.nodes.find((n) => n.id === fromNodeId)!;
+      const toNode = SEEDED_ROAD_GRAPH.nodes.find((n) => n.id === toNodeId)!;
 
-    // Calculate heading angle in degrees
-    const headingDeg = Math.round(
-      (Math.atan2(toNode.y - fromNode.y, toNode.x - fromNode.x) * 180) / Math.PI
-    );
+      const progressFraction = Math.min(1, Math.max(0, this.distanceOnCurrentEdge / edge.distanceMeters));
+      const newX = Math.round(fromNode.x + progressFraction * (toNode.x - fromNode.x));
+      const newY = Math.round(fromNode.y + progressFraction * (toNode.y - fromNode.y));
+      const newLat = Number((fromNode.lat + progressFraction * (toNode.lat - fromNode.lat)).toFixed(6));
+      const newLng = Number((fromNode.lng + progressFraction * (toNode.lng - fromNode.lng)).toFixed(6));
 
-    store.ambulancePosition = {
-      x: newX,
-      y: newY,
-      lat: newLat,
-      lng: newLng,
-      speed: Math.round(edge.speedKmh / trafficMultiplier),
-      heading: headingDeg,
-      source: 'SIMULATED',
-      serverSequence: store.ambulancePosition.serverSequence + 1,
-      observedAt: new Date().toISOString(),
-    };
+      const trafficMultiplier = store.trafficOverrides[edge.id] ?? edge.trafficMultiplier ?? 1.0;
+      const speedKmh = Math.round(edge.speedKmh / trafficMultiplier);
+      const headingDeg = Math.round(
+        ((Math.atan2(toNode.y - fromNode.y, toNode.x - fromNode.x) * 180) / Math.PI + 360) % 360
+      );
+
+      store.ambulancePosition = {
+        ambulanceId: 'amb-104',
+        x: newX,
+        y: newY,
+        lat: newLat,
+        lng: newLng,
+        speed: speedKmh,
+        speedMps: Number((speedKmh / 3.6).toFixed(2)),
+        heading: headingDeg,
+        headingDegrees: headingDeg,
+        accuracyMeters: 5,
+        source: 'SIMULATED',
+        sourceGeneration: store.ambulancePosition.sourceGeneration,
+        serverSequence: store.ambulancePosition.serverSequence + 1,
+        observedAt: new Date().toISOString(),
+        receivedAt: new Date().toISOString(),
+      };
+    }
 
     this.broadcastTelemetry();
   }
@@ -306,6 +348,10 @@ class SimulationService {
   }
 
   private onReachedDestination(): void {
+    if (this.completed) return;
+    this.completed = true;
+    this.pause();
+
     const activeCase = Array.from(store.cases.values()).find(
       (c) => c.caseStatus === CaseStatus.EN_ROUTE
     );
@@ -315,6 +361,14 @@ class SimulationService {
       } catch (err) {
         // already arrived
       }
+    }
+
+    const io = getIO();
+    if (io) {
+      io.to('ambulance:cases').emit('simulation.completed', {
+        runId: 'sim-default',
+        completedAt: new Date().toISOString(),
+      });
     }
   }
 

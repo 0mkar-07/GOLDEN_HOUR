@@ -130,6 +130,7 @@ export const AmbulancePage: React.FC = () => {
     speed: 0,
     heading: 85,
     source: 'SIMULATED',
+    sourceGeneration: 1,
     serverSequence: 1,
     observedAt: new Date().toISOString(),
   });
@@ -244,6 +245,16 @@ export const AmbulancePage: React.FC = () => {
       setTrafficOverrides(graphRes.trafficOverrides || {});
       setAmbulancePosition(graphRes.ambulancePosition);
       setHospitals(hospRes.hospitals);
+
+      // Load preview routes immediately so live map renders routes before case submission
+      try {
+        const previewRes = await apiClient.getPreviewRoutes();
+        if (previewRes?.routes) {
+          setCaseRoutes((prev) => (Object.keys(prev).length === 0 ? previewRes.routes : prev));
+        }
+      } catch (e) {
+        console.warn('Preview routes standby:', e);
+      }
     } catch (err: any) {
       console.error('Failed to load graph/hospitals:', err);
     }

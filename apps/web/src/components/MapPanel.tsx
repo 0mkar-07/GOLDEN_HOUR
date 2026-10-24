@@ -4,10 +4,27 @@ import {
   AmbulancePositionDto,
   RecommendationDto,
   SharedRouteDto,
+  RoadGraphDto,
 } from '@goldenhour/contracts';
 import { LiveMap } from './LiveMap';
 import { RoadNetworkMap } from './RoadNetworkMap';
 import { Map, Layers, Radio } from 'lucide-react';
+
+const DEFAULT_FALLBACK_GRAPH: RoadGraphDto = {
+  nodes: [
+    { id: 'node-amb-start', label: 'Highway Incident', x: 120, y: 150, lat: 40.71, lng: -74.02 },
+    { id: 'node-jct-1', label: 'Westside Expressway', x: 200, y: 160, lat: 40.711, lng: -74.012 },
+    { id: 'node-jct-2', label: 'Central Midtown', x: 300, y: 160, lat: 40.713, lng: -74.005 },
+    { id: 'node-hosp-a', label: 'St. Jude Trauma Bay', x: 350, y: 150, lat: 40.7128, lng: -74.006 },
+    { id: 'node-hosp-b', label: 'Bayview Slip', x: 150, y: 220, lat: 40.7088, lng: -74.015 },
+  ],
+  edges: [
+    { id: 'edge-1', from: 'node-amb-start', to: 'node-jct-1', distanceMeters: 1000, speedKmh: 50, baseTravelSeconds: 72, trafficMultiplier: 1.0 },
+    { id: 'edge-2', from: 'node-jct-1', to: 'node-jct-2', distanceMeters: 1200, speedKmh: 50, baseTravelSeconds: 86, trafficMultiplier: 1.0 },
+    { id: 'edge-3', from: 'node-jct-2', to: 'node-hosp-a', distanceMeters: 800, speedKmh: 40, baseTravelSeconds: 72, trafficMultiplier: 1.0 },
+    { id: 'edge-4', from: 'node-jct-1', to: 'node-hosp-b', distanceMeters: 1400, speedKmh: 45, baseTravelSeconds: 112, trafficMultiplier: 1.0 },
+  ],
+};
 
 interface MapPanelProps {
   hospitals: HospitalDto[];
@@ -17,6 +34,7 @@ interface MapPanelProps {
   recommendation?: RecommendationDto | null;
   confirmedHospitalId?: string | null;
   routes?: Record<string, SharedRouteDto>;
+  graph?: RoadGraphDto;
   isSharingGps?: boolean;
   onToggleShareGps?: () => void;
   className?: string;
@@ -71,16 +89,7 @@ export const MapPanel: React.FC<MapPanelProps> = (props) => {
         ) : (
           <div className="w-full h-full border border-[#DCE5E3] rounded-2xl overflow-hidden bg-white">
             <RoadNetworkMap
-              graph={{
-                nodes: [
-                  { id: 'node-amb-start', label: 'Highway Incident', x: 120, y: 150, lat: 40.71, lng: -74.02 },
-                  { id: 'node-jct-1', label: 'Westside Expressway', x: 200, y: 160, lat: 40.711, lng: -74.012 },
-                  { id: 'node-jct-2', label: 'Central Midtown', x: 300, y: 160, lat: 40.713, lng: -74.005 },
-                  { id: 'node-hosp-a', label: 'St. Jude Trauma Bay', x: 350, y: 150, lat: 40.7128, lng: -74.006 },
-                  { id: 'node-hosp-b', label: 'Bayview Slip', x: 150, y: 220, lat: 40.7088, lng: -74.015 },
-                ],
-                edges: [],
-              }}
+              graph={props.graph || DEFAULT_FALLBACK_GRAPH}
               ambulancePosition={props.ambulancePosition}
               hospitals={props.hospitals}
               recommendation={props.recommendation ?? null}
