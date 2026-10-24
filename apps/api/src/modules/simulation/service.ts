@@ -173,6 +173,7 @@ class SimulationService {
       lng: newLng,
       speed: Math.round(edge.speedKmh / trafficMultiplier),
       heading: headingDeg,
+      source: 'SIMULATED',
       serverSequence: store.ambulancePosition.serverSequence + 1,
       observedAt: new Date().toISOString(),
     };

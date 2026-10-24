@@ -1,127 +1,227 @@
-import React from 'react';
-import { NavLink } from 'react-router-dom';
-import { Ambulance, Building2, Shield, Clock, User, LogOut } from 'lucide-react';
+import React, { useState } from 'react';
+import { NavLink, useLocation } from 'react-router-dom';
+import { Ambulance, Building2, Shield, Clock, User, LogOut, Menu, X, Box } from 'lucide-react';
 import { ApiHealthBadge } from './ApiHealthBadge';
 import { useAuth } from '../context/AuthContext';
 import { UserRole } from '@goldenhour/contracts';
 
 export const Header: React.FC = () => {
   const { user, switchUser, logout, loading } = useAuth();
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const location = useLocation();
+
+  const getRoleLabel = () => {
+    if (user?.role === UserRole.AMBULANCE) return 'Medic 4 (Ambulance)';
+    if (user?.hospitalId === 'hosp-001') return 'St. Jude Trauma (Hospital A)';
+    if (user?.hospitalId === 'hosp-002') return 'Bayview Community (Hospital B)';
+    if (user?.role === UserRole.ADMIN) return 'Regional Dispatch Command';
+    return 'Paramedic Lead';
+  };
+
+  const navLinkClass = ({ isActive }: { isActive: boolean }) =>
+    `flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-semibold tracking-wide transition-colors ${
+      isActive
+        ? 'bg-[#174C49] text-white shadow-sm'
+        : 'text-[#596B69] hover:text-[#172B2A] hover:bg-[#EAF5F2]'
+    }`;
 
   return (
-    <header className="border-b border-slate-800 bg-slate-900/90 backdrop-blur sticky top-0 z-50">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-        {/* Brand & Demo Badge */}
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-red-500 to-amber-600 flex items-center justify-center shadow-lg shadow-red-500/20">
-            <Clock className="w-5 h-5 text-white stroke-[2.5]" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="font-bold text-lg tracking-tight text-white">GoldenHour</span>
-              <span className="px-2 py-0.5 text-[10px] font-bold tracking-wider uppercase rounded bg-amber-500/20 text-amber-300 border border-amber-500/40">
-                Demo • Synthetic
-              </span>
+    <header className="border-b border-[#DCE5E3] bg-white sticky top-0 z-50 shadow-xs">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="h-16 flex items-center justify-between gap-4">
+          {/* Brand & Context */}
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-lg bg-[#174C49] flex items-center justify-center text-white shadow-sm">
+              <Clock className="w-5 h-5 stroke-[2.5]" />
             </div>
-            <p className="text-[11px] text-slate-400">Emergency Hospital Coordination Protocol</p>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="font-bold text-lg tracking-tight text-[#172B2A]">GoldenHour</span>
+                <span className="px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider rounded bg-[#EAF5F2] text-[#176B68] border border-[#DCE5E3]">
+                  Demo • Synthetic
+                </span>
+              </div>
+              <p className="text-[11px] text-[#596B69] hidden sm:block">
+                Regional Emergency Care & Real-Time Hospital Dispatch
+              </p>
+            </div>
           </div>
-        </div>
 
-        {/* Navigation Tabs */}
-        <nav className="flex items-center gap-1 bg-slate-950 p-1 rounded-xl border border-slate-800">
-          <NavLink
-            to="/"
-            end
-            className={({ isActive }) =>
-              `flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
-                isActive
-                  ? 'bg-red-600 text-white shadow-sm'
-                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
-              }`
-            }
-          >
-            <Ambulance className="w-4 h-4" />
-            Ambulance
-          </NavLink>
+          {/* Desktop Navigation */}
+          <nav className="hidden md:flex items-center gap-1.5 p-1 bg-[#F6F8F8] border border-[#DCE5E3] rounded-xl">
+            <NavLink to="/" end className={navLinkClass}>
+              <Ambulance className="w-4 h-4" />
+              Ambulance
+            </NavLink>
 
-          <NavLink
-            to="/hospital"
-            className={({ isActive }) =>
-              `flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
-                isActive
-                  ? 'bg-blue-600 text-white shadow-sm'
-                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
-              }`
-            }
-          >
-            <Building2 className="w-4 h-4" />
-            Hospital
-          </NavLink>
+            <NavLink to="/hospital" className={navLinkClass}>
+              <Building2 className="w-4 h-4" />
+              Hospital
+            </NavLink>
 
-          <NavLink
-            to="/admin"
-            className={({ isActive }) =>
-              `flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
-                isActive
-                  ? 'bg-purple-600 text-white shadow-sm'
-                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
-              }`
-            }
-          >
-            <Shield className="w-4 h-4" />
-            Admin & 3D
-          </NavLink>
-        </nav>
-
-        {/* Right Action Bar: Quick Demo Role Switcher & Health Badge */}
-        <div className="hidden lg:flex items-center gap-3">
-          <ApiHealthBadge />
-
-          {/* Demo User Switcher */}
-          <div className="flex items-center gap-1.5 bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-1 text-xs">
-            <User className="w-3.5 h-3.5 text-slate-400" />
-            <select
-              aria-label="Active Demo Role"
-              value={
-                user?.role === UserRole.AMBULANCE
-                  ? 'paramedic'
-                  : user?.hospitalId === 'hosp-001'
-                  ? 'stjude'
-                  : user?.hospitalId === 'hosp-002'
-                  ? 'bayview'
-                  : user?.role === UserRole.ADMIN
-                  ? 'admin'
-                  : 'paramedic'
+            <NavLink
+              to="/admin"
+              className={({ isActive }) =>
+                `flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-semibold tracking-wide transition-colors ${
+                  isActive && !location.search.includes('tab=simulation')
+                    ? 'bg-[#174C49] text-white shadow-sm'
+                    : 'text-[#596B69] hover:text-[#172B2A] hover:bg-[#EAF5F2]'
+                }`
               }
-              onChange={(e) => switchUser(e.target.value as any)}
-              disabled={loading}
-              className="bg-transparent text-slate-200 font-medium text-xs focus:outline-none cursor-pointer"
             >
-              <option value="paramedic" className="bg-slate-900 text-slate-100">
-                Paramedic Lead (Ambulance)
-              </option>
-              <option value="stjude" className="bg-slate-900 text-slate-100">
-                St. Jude ED (Hospital A)
-              </option>
-              <option value="bayview" className="bg-slate-900 text-slate-100">
-                Bayview Urgent (Hospital B)
-              </option>
-              <option value="admin" className="bg-slate-900 text-slate-100">
-                System Dispatcher (Admin)
-              </option>
-            </select>
+              <Shield className="w-4 h-4" />
+              Admin Dispatch
+            </NavLink>
 
-            {user && (
-              <button
-                onClick={logout}
-                title="Logout"
-                className="text-slate-500 hover:text-rose-400 transition-colors ml-1"
+            <NavLink
+              to="/admin?tab=simulation"
+              className={() =>
+                `flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-semibold tracking-wide transition-colors ${
+                  location.pathname === '/admin' && location.search.includes('tab=simulation')
+                    ? 'bg-[#174C49] text-white shadow-sm'
+                    : 'text-[#596B69] hover:text-[#172B2A] hover:bg-[#EAF5F2]'
+                }`
+              }
+            >
+              <Box className="w-4 h-4" />
+              Simulation
+            </NavLink>
+          </nav>
+
+          {/* Right Section: Health & Account Controls */}
+          <div className="hidden lg:flex items-center gap-3">
+            <ApiHealthBadge />
+
+            {/* Role Switcher */}
+            <div className="flex items-center gap-1.5 bg-white border border-[#DCE5E3] rounded-lg px-2.5 py-1.5 text-xs shadow-xs">
+              <User className="w-3.5 h-3.5 text-[#176B68]" />
+              <select
+                aria-label="Active Demo Role"
+                value={
+                  user?.role === UserRole.AMBULANCE
+                    ? 'paramedic'
+                    : user?.hospitalId === 'hosp-001'
+                    ? 'stjude'
+                    : user?.hospitalId === 'hosp-002'
+                    ? 'bayview'
+                    : user?.role === UserRole.ADMIN
+                    ? 'admin'
+                    : 'paramedic'
+                }
+                onChange={(e) => switchUser(e.target.value as any)}
+                disabled={loading}
+                className="bg-transparent text-[#172B2A] font-medium text-xs focus:outline-none cursor-pointer pr-1"
               >
-                <LogOut className="w-3.5 h-3.5" />
-              </button>
-            )}
+                <option value="paramedic">Paramedic Lead (Ambulance)</option>
+                <option value="stjude">St. Jude ED (Hospital A)</option>
+                <option value="bayview">Bayview Urgent (Hospital B)</option>
+                <option value="admin">System Dispatcher (Admin)</option>
+              </select>
+
+              {user && (
+                <button
+                  onClick={logout}
+                  title="Logout"
+                  className="text-[#596B69] hover:text-[#B42318] transition-colors ml-1"
+                >
+                  <LogOut className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Mobile menu button */}
+          <div className="flex items-center gap-2 md:hidden">
+            <button
+              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+              className="p-2 rounded-lg border border-[#DCE5E3] text-[#172B2A] hover:bg-[#F6F8F8]"
+              aria-label="Toggle navigation menu"
+            >
+              {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+            </button>
           </div>
         </div>
+
+        {/* Mobile Navigation Drawer */}
+        {mobileMenuOpen && (
+          <div className="md:hidden border-t border-[#DCE5E3] py-3 space-y-2">
+            <nav className="flex flex-col gap-1">
+              <NavLink
+                to="/"
+                end
+                onClick={() => setMobileMenuOpen(false)}
+                className={navLinkClass}
+              >
+                <Ambulance className="w-4 h-4" />
+                Ambulance
+              </NavLink>
+
+              <NavLink
+                to="/hospital"
+                onClick={() => setMobileMenuOpen(false)}
+                className={navLinkClass}
+              >
+                <Building2 className="w-4 h-4" />
+                Hospital
+              </NavLink>
+
+              <NavLink
+                to="/admin"
+                onClick={() => setMobileMenuOpen(false)}
+                className={navLinkClass}
+              >
+                <Shield className="w-4 h-4" />
+                Admin Dispatch
+              </NavLink>
+
+              <NavLink
+                to="/admin?tab=simulation"
+                onClick={() => setMobileMenuOpen(false)}
+                className={navLinkClass}
+              >
+                <Box className="w-4 h-4" />
+                Simulation
+              </NavLink>
+            </nav>
+
+            <div className="pt-2 border-t border-[#DCE5E3] flex flex-col gap-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-[#596B69]">Unit / Role:</span>
+                <span className="text-xs font-semibold text-[#172B2A]">{getRoleLabel()}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <select
+                  aria-label="Active Demo Role Mobile"
+                  value={
+                    user?.role === UserRole.AMBULANCE
+                      ? 'paramedic'
+                      : user?.hospitalId === 'hosp-001'
+                      ? 'stjude'
+                      : user?.hospitalId === 'hosp-002'
+                      ? 'bayview'
+                      : user?.role === UserRole.ADMIN
+                      ? 'admin'
+                      : 'paramedic'
+                  }
+                  onChange={(e) => {
+                    switchUser(e.target.value as any);
+                    setMobileMenuOpen(false);
+                  }}
+                  disabled={loading}
+                  className="w-full bg-[#F6F8F8] border border-[#DCE5E3] text-[#172B2A] font-medium text-xs rounded-lg px-2.5 py-2"
+                >
+                  <option value="paramedic">Paramedic Lead (Ambulance)</option>
+                  <option value="stjude">St. Jude ED (Hospital A)</option>
+                  <option value="bayview">Bayview Urgent (Hospital B)</option>
+                  <option value="admin">System Dispatcher (Admin)</option>
+                </select>
+              </div>
+              <div className="pt-1">
+                <ApiHealthBadge />
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </header>
   );

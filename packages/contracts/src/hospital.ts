@@ -2,10 +2,10 @@ import { z } from 'zod';
 import { ReceivingStatus } from './enums.js';
 
 export const LocationSchema = z.object({
-  x: z.number(),
-  y: z.number(),
-  lat: z.number(),
-  lng: z.number(),
+  x: z.number().finite(),
+  y: z.number().finite(),
+  lat: z.number().min(-90).max(90),
+  lng: z.number().min(-180).max(180),
 });
 
 export type LocationDto = z.infer<typeof LocationSchema>;

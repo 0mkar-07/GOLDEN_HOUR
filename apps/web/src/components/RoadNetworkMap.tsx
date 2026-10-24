@@ -24,6 +24,14 @@ export const RoadNetworkMap: React.FC<RoadNetworkMapProps> = ({
   trafficOverrides = {},
   onSelectHospital,
 }) => {
+  if (!graph || !graph.edges) {
+    return (
+      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 text-center text-slate-400">
+        Simulated road graph topology not available.
+      </div>
+    );
+  }
+
   const primaryA = recommendation?.hospitalA;
   const backupB = recommendation?.hospitalB;
   const backupC = recommendation?.hospitalC;

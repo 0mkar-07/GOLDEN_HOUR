@@ -440,4 +440,25 @@ export const apiClient = {
       body: JSON.stringify({ caseId }),
     });
   },
+
+  // Case Geographic Routes API (Stage 2)
+  async getCaseRoutes(caseId: string): Promise<{
+    caseId: string;
+    positionSequence: number;
+    routes: Record<string, any>;
+    generatedAt: string;
+  }> {
+    return request<any>(`/api/v1/cases/${caseId}/routes`, { method: 'GET' });
+  },
+
+  // Submit Device GPS Position (Stage 3)
+  async submitAmbulancePosition(
+    ambulanceId: string,
+    position: { lat: number; lng: number; speed?: number; heading?: number; accuracyMeters?: number }
+  ): Promise<{ success: boolean; position: any }> {
+    return request<any>(`/api/v1/ambulances/${ambulanceId}/position`, {
+      method: 'POST',
+      body: JSON.stringify(position),
+    });
+  },
 };

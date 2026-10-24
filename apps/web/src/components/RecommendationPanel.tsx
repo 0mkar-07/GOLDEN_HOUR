@@ -47,16 +47,16 @@ export const RecommendationPanel: React.FC<RecommendationPanelProps> = ({
 }) => {
   if (!recommendation) {
     return (
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 text-center space-y-3">
-        <Sparkles className="w-8 h-8 text-blue-400 mx-auto" />
-        <h3 className="font-bold text-white text-base">Destination Recommendation Standby</h3>
-        <p className="text-xs text-slate-400 max-w-md mx-auto">
+      <div className="bg-white border border-[#DCE5E3] rounded-2xl p-6 text-center space-y-3 shadow-xs">
+        <Sparkles className="w-8 h-8 text-[#176B68] mx-auto" />
+        <h3 className="font-bold text-[#172B2A] text-base">Destination Recommendation Standby</h3>
+        <p className="text-xs text-[#596B69] max-w-md mx-auto">
           Confirm patient clinical requirements above to run Agent 2 (Suitability Filtering) and Agent 3 (Time & Coordination Ranking).
         </p>
         <button
           onClick={onRefresh}
           disabled={loading}
-          className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold rounded-xl shadow-lg shadow-blue-600/20 transition inline-flex items-center gap-2"
+          className="px-4 py-2 bg-[#174C49] hover:bg-[#135552] text-white text-xs font-semibold rounded-xl shadow-xs transition inline-flex items-center gap-2"
         >
           <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
           Run Destination Matching
@@ -72,304 +72,415 @@ export const RecommendationPanel: React.FC<RecommendationPanelProps> = ({
       {/* Top Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-base font-bold text-white flex items-center gap-2">
-            <MapPin className="w-5 h-5 text-red-500" />
-            Destination Coordination (Agent 2 & 3 Matching)
+          <h2 className="text-base font-bold text-[#172B2A] flex items-center gap-2">
+            <Navigation className="w-5 h-5 text-[#176B68]" />
+            Tri-Agent Destination Recommendations
           </h2>
-          <p className="text-xs text-slate-400">
-            Formula: <code className="text-blue-300">CareStart = max(Arrival, ResourceReady) + ReceivingDelay</code>
+          <p className="text-xs text-[#596B69] mt-0.5">
+            Agent 2 (Verified Capabilities & Surgical Teams) + Agent 3 (Time-to-Care Dynamic Ranking)
           </p>
         </div>
 
         <button
           onClick={onRefresh}
           disabled={loading}
-          className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium rounded-xl border border-slate-700 transition"
+          className="px-3 py-1.5 bg-white border border-[#DCE5E3] hover:bg-[#F6F8F8] text-[#172B2A] text-xs font-semibold rounded-lg shadow-xs transition flex items-center gap-1.5"
         >
           <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
-          Re-evaluate
+          Recalculate
         </button>
       </div>
 
-      {/* Destination Cards Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        {/* Hospital A: Primary Destination */}
-        <div className="bg-slate-900 border-2 border-red-500/50 rounded-2xl p-5 space-y-3 shadow-lg shadow-red-500/10 relative overflow-hidden">
-          <div className="absolute top-0 right-0 bg-red-600 text-white font-bold text-[10px] tracking-wider uppercase px-3 py-1 rounded-bl-xl shadow-sm">
-            Primary (A)
-          </div>
-
-          <div>
-            <span className="text-[11px] font-semibold text-red-400 uppercase tracking-wider">
-              Definitive Full-Care Center
-            </span>
-            <h3 className="text-base font-bold text-white mt-0.5">
-              {hospitalA ? hospitalA.name : 'No Eligible Full-Care Facility'}
-            </h3>
-            <p className="text-xs text-slate-400 font-mono">Code: {hospitalA?.code || 'N/A'}</p>
-          </div>
-
-          {hospitalA ? (
-            <div className="space-y-3">
-              {/* Time Breakdown Card */}
-              <div className="p-3 bg-slate-950 rounded-xl border border-slate-850 space-y-1.5 font-mono text-xs">
-                <div className="flex justify-between items-center text-slate-400">
-                  <span>Road Transit ETA:</span>
-                  <span className="text-slate-200 font-bold">~{Math.round(hospitalA.travelSeconds / 60)} mins</span>
-                </div>
-                <div className="flex justify-between items-center text-slate-400">
-                  <span>Intake / Receiving Delay:</span>
-                  <span className="text-slate-200">+{Math.round(hospitalA.receivingDelaySeconds / 60)} mins</span>
-                </div>
-                <div className="flex justify-between items-center pt-1.5 border-t border-slate-800 text-sm font-bold">
-                  <span className="text-red-400">Estimated Care Start:</span>
-                  <span className="text-emerald-400">~{Math.round(hospitalA.timeToCareSeconds / 60)} mins</span>
-                </div>
-                <div className="flex justify-between items-center pt-1 text-[11px] text-slate-500 font-sans">
-                  <span>Routing Engine:</span>
-                  <span className="font-semibold text-slate-400">
-                    {hospitalA.routingSource === 'LIVE_OSRM' ? 'Live Routing Engine' : 'Simulated Road Graph'}
-                  </span>
-                </div>
-              </div>
-
-              {/* Rationale */}
-              <div className="text-xs text-slate-400 space-y-1">
-                <span className="font-semibold text-slate-300">Agent Rationale:</span>
-                <ul className="list-disc pl-4 space-y-1 text-[11px]">
-                  {hospitalA.reasons.slice(0, 2).map((r, i) => (
-                    <li key={i}>{r}</li>
-                  ))}
-                </ul>
-              </div>
-
-              {/* Dispatch Action & Live Destination Readiness */}
-              <div className="pt-2 border-t border-slate-800 space-y-2">
-                {destination ? (
-                  <div className="space-y-1.5">
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="text-slate-400">Destination State:</span>
-                      {destination.readiness === DestinationReadiness.PENDING && (
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 text-xs font-bold animate-pulse">
-                          <Radio className="w-3.5 h-3.5 text-amber-400" />
-                          Requested (Awaiting Confirmation)
-                        </span>
-                      )}
-                      {destination.readiness === DestinationReadiness.CONFIRMED && (
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-xs font-bold">
-                          <CheckCircle2 className="w-3.5 h-3.5" />
-                          Confirmed • Resources Reserved
-                        </span>
-                      )}
-                      {destination.readiness === DestinationReadiness.UNAVAILABLE && (
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/40 text-xs font-bold">
-                          <XCircle className="w-3.5 h-3.5" />
-                          Unavailable / Declined
-                        </span>
-                      )}
-                    </div>
-                    {destination.readiness === DestinationReadiness.CONFIRMED && (
-                      <p className="text-[11px] text-emerald-400/90 leading-tight">
-                        Hospital {hospitalA.name} confirmed the reservation. Full-care inventory atomically locked.
-                      </p>
-                    )}
-                    {destination.readiness === DestinationReadiness.PENDING && (
-                      <p className="text-[11px] text-amber-300/80 leading-tight">
-                        Ambulance dispatched. Waiting for Hospital {hospitalA.name} coordinator to accept reservation.
-                      </p>
-                    )}
-                  </div>
-                ) : (
-                  onDispatch && (
-                    <button
-                      onClick={onDispatch}
-                      disabled={dispatching || loading}
-                      className="w-full py-2.5 px-4 bg-red-600 hover:bg-red-500 disabled:opacity-50 text-white font-semibold text-xs rounded-xl shadow-lg shadow-red-600/30 transition flex items-center justify-center gap-2"
-                    >
-                      <Send className="w-4 h-4" />
-                      {dispatching ? 'Dispatching & Notifying...' : 'Dispatch Ambulance to Hospital A'}
-                    </button>
-                  )
-                )}
-              </div>
-            </div>
-          ) : (
-            <div className="p-4 bg-slate-950 rounded-xl border border-slate-850 text-xs text-rose-300">
-              No hospital in the network currently meets all full-care requirements with available capacity.
-            </div>
-          )}
-        </div>
-
-        {/* Hospital B: Stabilization Backup 1 */}
-        <div className="bg-slate-900 border border-slate-800 hover:border-amber-500/40 rounded-2xl p-5 space-y-3 relative overflow-hidden transition">
-          <div className="absolute top-0 right-0 bg-amber-500/20 text-amber-300 border-b border-l border-amber-500/30 font-bold text-[10px] tracking-wider uppercase px-2.5 py-0.5 rounded-bl-xl">
-            Backup (B)
-          </div>
-
-          <div>
-            <span className="text-[11px] font-semibold text-amber-400 uppercase tracking-wider">
-              Immediate Stabilization
-            </span>
-            <h3 className="text-base font-bold text-white mt-0.5">
-              {hospitalB ? hospitalB.name : 'No Backup Available'}
-            </h3>
-            <p className="text-xs text-slate-400 font-mono">Code: {hospitalB?.code || 'N/A'}</p>
-          </div>
-
-          {hospitalB && (
-            <div className="space-y-3">
-              <div className="p-3 bg-slate-950 rounded-xl border border-slate-850 space-y-1.5 font-mono text-xs">
-                <div className="flex justify-between items-center text-slate-400">
-                  <span>Current-Position ETA:</span>
-                  <span className="text-emerald-400 font-bold">~{Math.round(hospitalB.travelSeconds / 60)} mins</span>
-                </div>
-                <div className="flex justify-between items-center pt-1.5 border-t border-slate-800 text-xs font-bold">
-                  <span className="text-slate-300">Time to Care:</span>
-                  <span className="text-slate-200">~{Math.round(hospitalB.timeToCareSeconds / 60)} mins</span>
-                </div>
-                <div className="flex justify-between items-center pt-1 text-[10px] text-slate-500 font-sans">
-                  <span>Routing:</span>
-                  <span className="font-semibold text-slate-400">
-                    {hospitalB.routingSource === 'LIVE_OSRM' ? 'Live Routing Engine' : 'Simulated Road Graph'}
-                  </span>
-                </div>
-              </div>
-
-              {/* Capabilities & Limitations */}
-              <div className="text-xs space-y-1">
-                <span className="font-semibold text-slate-300">Limitations vs Hospital A:</span>
-                {hospitalB.missingCapabilities.length > 0 ? (
-                  <p className="text-[11px] text-amber-300/90 leading-relaxed">
-                    Lacks definitive: {hospitalB.missingCapabilities.join(', ')}
-                  </p>
-                ) : (
-                  <p className="text-[11px] text-slate-400">Meets immediate stabilization criteria.</p>
-                )}
-              </div>
-
-              <div className="text-[11px] text-slate-500 italic">
-                Standby notice only; does not lock equipment.
-              </div>
-
-              {/* Clinician Diversion Action */}
-              {onDivert && destination && destination.hospitalId !== hospitalB.hospitalId && (
-                <div className="pt-2 border-t border-slate-800">
-                  <button
-                    onClick={() => onDivert(hospitalB.hospitalId)}
-                    disabled={diverting || loading}
-                    className="w-full py-1.5 px-3 bg-amber-600/20 hover:bg-amber-600 text-amber-300 hover:text-white border border-amber-500/40 rounded-xl text-xs font-semibold transition flex items-center justify-center gap-1.5 disabled:opacity-50"
-                  >
-                    <ArrowRightLeft className="w-3.5 h-3.5" />
-                    {diverting ? 'Diverting Route...' : 'Divert to Backup B'}
-                  </button>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* Hospital C: Stabilization Backup 2 */}
-        <div className="bg-slate-900 border border-slate-800 hover:border-amber-500/40 rounded-2xl p-5 space-y-3 relative overflow-hidden transition">
-          <div className="absolute top-0 right-0 bg-amber-500/20 text-amber-300 border-b border-l border-amber-500/30 font-bold text-[10px] tracking-wider uppercase px-2.5 py-0.5 rounded-bl-xl">
-            Backup (C)
-          </div>
-
-          <div>
-            <span className="text-[11px] font-semibold text-amber-400 uppercase tracking-wider">
-              Secondary Stabilization
-            </span>
-            <h3 className="text-base font-bold text-white mt-0.5">
-              {hospitalC ? hospitalC.name : 'No Backup Available'}
-            </h3>
-            <p className="text-xs text-slate-400 font-mono">Code: {hospitalC?.code || 'N/A'}</p>
-          </div>
-
-          {hospitalC && (
-            <div className="space-y-3">
-              <div className="p-3 bg-slate-950 rounded-xl border border-slate-850 space-y-1.5 font-mono text-xs">
-                <div className="flex justify-between items-center text-slate-400">
-                  <span>Current-Position ETA:</span>
-                  <span className="text-emerald-400 font-bold">~{Math.round(hospitalC.travelSeconds / 60)} mins</span>
-                </div>
-                <div className="flex justify-between items-center pt-1.5 border-t border-slate-800 text-xs font-bold">
-                  <span className="text-slate-300">Time to Care:</span>
-                  <span className="text-slate-200">~{Math.round(hospitalC.timeToCareSeconds / 60)} mins</span>
-                </div>
-                <div className="flex justify-between items-center pt-1 text-[10px] text-slate-500 font-sans">
-                  <span>Routing:</span>
-                  <span className="font-semibold text-slate-400">
-                    {hospitalC.routingSource === 'LIVE_OSRM' ? 'Live Routing Engine' : 'Simulated Road Graph'}
-                  </span>
-                </div>
-              </div>
-
-              {/* Capabilities & Limitations */}
-              <div className="text-xs space-y-1">
-                <span className="font-semibold text-slate-300">Limitations vs Hospital A:</span>
-                {hospitalC.missingCapabilities.length > 0 ? (
-                  <p className="text-[11px] text-amber-300/90 leading-relaxed">
-                    Lacks definitive: {hospitalC.missingCapabilities.join(', ')}
-                  </p>
-                ) : (
-                  <p className="text-[11px] text-slate-400">Meets immediate stabilization criteria.</p>
-                )}
-              </div>
-
-              <div className="text-[11px] text-slate-500 italic">
-                Dynamic candidate evaluated from current coordinates.
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* AI Clinical Coordinator Briefing (Agent LLM Narrative) */}
+      {/* AI Dispatch Coordinator Live Briefing Banner */}
       {recommendation.coordinatorBriefing && (
-        <div className="bg-gradient-to-r from-blue-950/40 via-purple-950/25 to-slate-900 border border-purple-500/30 rounded-2xl p-5 space-y-2.5 shadow-lg shadow-purple-950/20">
-          <div className="flex items-center gap-2">
-            <Sparkles className="w-4 h-4 text-purple-400 animate-pulse" />
-            <h4 className="text-xs font-bold text-white uppercase tracking-wider">
-              AI Dispatch Coordinator Briefing (Gemini Agent)
-            </h4>
-            <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 font-mono font-semibold">
-              Live Synthesis
-            </span>
+        <div className="p-3.5 bg-[#EAF5F2] border border-[#DCE5E3] rounded-xl flex items-start gap-3">
+          <div className="p-1.5 bg-white rounded-lg border border-[#DCE5E3] text-[#176B68] shrink-0 mt-0.5">
+            <Sparkles className="w-4 h-4" />
           </div>
-          <p className="text-xs text-purple-200/90 leading-relaxed">
-            {recommendation.coordinatorBriefing}
-          </p>
+          <div className="space-y-0.5">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-[#174C49]">
+              AI Dispatch Coordinator Briefing (Gemini Agent)
+            </span>
+            <p className="text-xs text-[#172B2A] leading-relaxed">
+              {recommendation.coordinatorBriefing}
+            </p>
+          </div>
         </div>
       )}
 
-      {/* Tri-Agent Explanation Panel */}
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-3">
-        <h3 className="text-sm font-bold text-white flex items-center gap-2">
-          <Info className="w-4 h-4 text-blue-400" />
-          Tri-Agent Decision Pipeline Breakdown
-        </h3>
+      {/* 3-Column Recommendations Grid */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        {/* Destination A: Primary Full-Care Hospital */}
+        <div className="bg-white border-2 border-[#176B68] rounded-2xl overflow-hidden shadow-xs flex flex-col justify-between">
+          <div className="bg-[#EAF5F2] px-4 py-3 border-b border-[#DCE5E3] flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="px-2 py-0.5 rounded-full bg-[#174C49] text-white text-[10px] font-bold uppercase tracking-wider">
+                Primary (A)
+              </span>
+              <span className="text-xs font-bold text-[#172B2A]">Full Definitive Care</span>
+            </div>
+            <span className="text-xs px-2 py-0.5 rounded-md font-semibold bg-white border border-[#DCE5E3] text-[#176B68]">
+              {hospitalA?.code || 'N/A'}
+            </span>
+          </div>
+
+          <div className="p-4 space-y-3 flex-1">
+            {hospitalA ? (
+              <div className="space-y-3">
+                <div>
+                  <h3 className="font-bold text-sm text-[#172B2A]">{hospitalA.name}</h3>
+                  <div className="flex items-center gap-1.5 text-xs text-[#596B69] mt-0.5">
+                    <MapPin className="w-3.5 h-3.5 text-[#176B68]" />
+                    <span>Eligible for all confirmed full-care requirements</span>
+                  </div>
+                </div>
+
+                {/* Time Breakdown Card */}
+                <div className="p-3 bg-[#F6F8F8] rounded-xl border border-[#DCE5E3] space-y-1.5 text-xs">
+                  <div className="flex justify-between items-center text-[#596B69]">
+                    <span>Road Transit ETA:</span>
+                    <span className="text-[#172B2A] font-bold">~{Math.round(hospitalA.travelSeconds / 60)} mins</span>
+                  </div>
+                  <div className="flex justify-between items-center text-[#596B69]">
+                    <span>Intake / Receiving Delay:</span>
+                    <span className="text-[#172B2A]">+{Math.round(hospitalA.receivingDelaySeconds / 60)} mins</span>
+                  </div>
+                  <div className="flex justify-between items-center pt-1.5 border-t border-[#DCE5E3] text-sm font-bold">
+                    <span className="text-[#174C49]">Estimated Care Start:</span>
+                    <span className="text-[#237048]">~{Math.round(hospitalA.timeToCareSeconds / 60)} mins</span>
+                  </div>
+                  <div className="flex justify-between items-center pt-1 text-[11px] text-[#596B69]">
+                    <span>Routing Engine:</span>
+                    <span className="font-semibold text-[#172B2A]">
+                      {hospitalA.routingSource === 'GOOGLE_ROUTES'
+                        ? 'Google Routes API'
+                        : hospitalA.routingSource === 'LIVE_OSRM'
+                        ? 'Live OSRM Router'
+                        : 'Simulated Road Graph'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Rationale */}
+                <div className="text-xs text-[#596B69] space-y-1">
+                  <span className="font-semibold text-[#172B2A]">Agent Rationale:</span>
+                  <ul className="list-disc pl-4 space-y-1 text-[11px]">
+                    {hospitalA.reasons.slice(0, 2).map((r, i) => (
+                      <li key={i}>{r}</li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+            ) : (
+              <div className="p-4 bg-[#F6F8F8] border border-[#DCE5E3] rounded-xl text-center space-y-1.5">
+                <AlertTriangle className="w-5 h-5 text-[#8A5800] mx-auto" />
+                <h4 className="font-bold text-xs text-[#172B2A]">No Hospital Meets Full-Care Requirements</h4>
+                <p className="text-[11px] text-[#596B69]">
+                  All facilities lack one or more confirmed surgical/equipment specialties. Consider immediate stabilization at Backup B.
+                </p>
+              </div>
+            )}
+          </div>
+
+          {/* Action Footer */}
+          <div className="p-4 bg-[#F6F8F8] border-t border-[#DCE5E3]">
+            {destination && destination.hospitalId === hospitalA?.hospitalId ? (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-[#596B69]">Destination State:</span>
+                  {destination.readiness === DestinationReadiness.PENDING && (
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#FFF8E6] text-[#8A5800] border border-[#F3E5AB] text-xs font-bold animate-pulse">
+                      <Radio className="w-3.5 h-3.5 text-[#8A5800]" />
+                      Requested (Awaiting Confirmation)
+                    </span>
+                  )}
+                  {destination.readiness === DestinationReadiness.CONFIRMED && (
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#EAF5F2] text-[#237048] border border-[#DCE5E3] text-xs font-bold">
+                      <CheckCircle2 className="w-3.5 h-3.5 text-[#237048]" />
+                      Confirmed • Resources Reserved
+                    </span>
+                  )}
+                  {destination.readiness === DestinationReadiness.UNAVAILABLE && (
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#FDF2F2] text-[#B42318] border border-[#F8D7DA] text-xs font-bold">
+                      <XCircle className="w-3.5 h-3.5 text-[#B42318]" />
+                      Unavailable / Declined
+                    </span>
+                  )}
+                </div>
+
+                {destination.readiness === DestinationReadiness.CONFIRMED && (
+                  <p className="text-[11px] text-[#237048] leading-tight">
+                    Hospital {hospitalA.name} confirmed the reservation. Full-care inventory atomically locked.
+                  </p>
+                )}
+
+                {destination.readiness === DestinationReadiness.PENDING && (
+                  <p className="text-[11px] text-[#8A5800] leading-tight">
+                    Ambulance dispatched. Waiting for Hospital {hospitalA.name} coordinator to accept reservation.
+                  </p>
+                )}
+              </div>
+            ) : (
+              <button
+                onClick={onDispatch}
+                disabled={!hospitalA || dispatching}
+                className="w-full py-2.5 bg-[#174C49] hover:bg-[#135552] disabled:opacity-50 text-white font-semibold text-xs rounded-xl shadow-xs transition flex items-center justify-center gap-2"
+              >
+                <Send className="w-3.5 h-3.5" />
+                {dispatching ? 'Dispatching & Notifying...' : 'Dispatch Ambulance to Hospital A'}
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Destination B: Dynamic Stabilization Backup */}
+        <div className="bg-white border border-[#DCE5E3] rounded-2xl overflow-hidden shadow-xs flex flex-col justify-between">
+          <div className="bg-white px-4 py-3 border-b border-[#DCE5E3] flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="px-2 py-0.5 rounded-full bg-[#EAF5F2] text-[#176B68] border border-[#DCE5E3] text-[10px] font-bold uppercase tracking-wider">
+                Backup (B)
+              </span>
+              <span className="text-xs font-bold text-[#172B2A]">Immediate Stabilization</span>
+            </div>
+            <span className="text-xs px-2 py-0.5 rounded-md font-semibold bg-[#F6F8F8] border border-[#DCE5E3] text-[#596B69]">
+              {hospitalB?.code || 'N/A'}
+            </span>
+          </div>
+
+          <div className="p-4 space-y-3 flex-1">
+            {hospitalB ? (
+              <div className="space-y-3">
+                <div>
+                  <h3 className="font-bold text-sm text-[#172B2A]">{hospitalB.name}</h3>
+                  <div className="flex items-center gap-1.5 text-xs text-[#596B69] mt-0.5">
+                    <MapPin className="w-3.5 h-3.5 text-[#176B68]" />
+                    <span>Ranked by proximity from current ambulance coordinate</span>
+                  </div>
+                </div>
+
+                {/* Time Breakdown Card */}
+                <div className="p-3 bg-[#F6F8F8] rounded-xl border border-[#DCE5E3] space-y-1.5 text-xs">
+                  <div className="flex justify-between items-center text-[#596B69]">
+                    <span>Current-Position ETA:</span>
+                    <span className="text-[#237048] font-bold">~{Math.round(hospitalB.travelSeconds / 60)} mins</span>
+                  </div>
+                  <div className="flex justify-between items-center pt-1.5 border-t border-[#DCE5E3] text-xs font-bold">
+                    <span className="text-[#596B69]">Time to Care:</span>
+                    <span className="text-[#172B2A]">~{Math.round(hospitalB.timeToCareSeconds / 60)} mins</span>
+                  </div>
+                  <div className="flex justify-between items-center pt-1 text-[10px] text-[#596B69]">
+                    <span>Routing:</span>
+                    <span className="font-semibold text-[#172B2A]">
+                      {hospitalB.routingSource === 'GOOGLE_ROUTES'
+                        ? 'Google Routes API'
+                        : hospitalB.routingSource === 'LIVE_OSRM'
+                        ? 'Live OSRM'
+                        : 'Simulated Road Graph'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Limitations */}
+                <div className="text-xs space-y-1">
+                  <span className="font-semibold text-[#172B2A]">Limitations vs Hospital A:</span>
+                  <p className="text-[11px] text-[#8A5800] bg-[#FFF8E6] p-2 rounded-lg border border-[#F3E5AB]">
+                    {hospitalB.missingCapabilities.length > 0
+                      ? `Lacks full-care specialties: ${hospitalB.missingCapabilities.join(', ')}. Suitable for emergency airway/hemodynamic stabilization only.`
+                      : 'Equipped for stabilization triage.'}
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <div className="p-4 bg-[#F6F8F8] border border-[#DCE5E3] rounded-xl text-center text-xs text-[#596B69]">
+                No distinct stabilization backup within immediate radius.
+              </div>
+            )}
+          </div>
+
+          {/* Action Footer */}
+          <div className="p-4 bg-[#F6F8F8] border-t border-[#DCE5E3]">
+            {destination && destination.hospitalId === hospitalB?.hospitalId ? (
+              <div className="p-2 rounded-xl bg-[#EAF5F2] border border-[#DCE5E3] text-center text-xs font-bold text-[#174C49]">
+                Currently Diverted to Backup B
+              </div>
+            ) : destination ? (
+              <button
+                onClick={() => hospitalB && onDivert && onDivert(hospitalB.hospitalId)}
+                disabled={!hospitalB || diverting}
+                className="w-full py-2 bg-white border border-[#DCE5E3] hover:bg-[#F6F8F8] text-[#176B68] font-semibold text-xs rounded-xl shadow-xs transition flex items-center justify-center gap-1.5"
+              >
+                <ArrowRightLeft className="w-3.5 h-3.5" />
+                {diverting ? 'Diverting...' : `Divert to Backup B (${hospitalB?.code || 'Backup B'})`}
+              </button>
+            ) : (
+              <div className="text-center text-[11px] text-[#596B69]">
+                Standby ticket issued automatically on dispatch
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Destination C: Secondary Proximity Backup */}
+        <div className="bg-white border border-[#DCE5E3] rounded-2xl overflow-hidden shadow-xs flex flex-col justify-between">
+          <div className="bg-white px-4 py-3 border-b border-[#DCE5E3] flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="px-2 py-0.5 rounded-full bg-[#F6F8F8] text-[#596B69] border border-[#DCE5E3] text-[10px] font-bold uppercase tracking-wider">
+                Backup (C)
+              </span>
+              <span className="text-xs font-bold text-[#172B2A]">Secondary Contingency</span>
+            </div>
+            <span className="text-xs px-2 py-0.5 rounded-md font-semibold bg-[#F6F8F8] border border-[#DCE5E3] text-[#596B69]">
+              {hospitalC?.code || 'N/A'}
+            </span>
+          </div>
+
+          <div className="p-4 space-y-3 flex-1">
+            {hospitalC ? (
+              <div className="space-y-3">
+                <div>
+                  <h3 className="font-bold text-sm text-[#172B2A]">{hospitalC.name}</h3>
+                  <div className="flex items-center gap-1.5 text-xs text-[#596B69] mt-0.5">
+                    <MapPin className="w-3.5 h-3.5 text-[#176B68]" />
+                    <span>Secondary proximity contingency</span>
+                  </div>
+                </div>
+
+                {/* Time Breakdown Card */}
+                <div className="p-3 bg-[#F6F8F8] rounded-xl border border-[#DCE5E3] space-y-1.5 text-xs">
+                  <div className="flex justify-between items-center text-[#596B69]">
+                    <span>Current-Position ETA:</span>
+                    <span className="text-[#237048] font-bold">~{Math.round(hospitalC.travelSeconds / 60)} mins</span>
+                  </div>
+                  <div className="flex justify-between items-center pt-1.5 border-t border-[#DCE5E3] text-xs font-bold">
+                    <span className="text-[#596B69]">Time to Care:</span>
+                    <span className="text-[#172B2A]">~{Math.round(hospitalC.timeToCareSeconds / 60)} mins</span>
+                  </div>
+                  <div className="flex justify-between items-center pt-1 text-[10px] text-[#596B69]">
+                    <span>Routing:</span>
+                    <span className="font-semibold text-[#172B2A]">
+                      {hospitalC.routingSource === 'GOOGLE_ROUTES'
+                        ? 'Google Routes API'
+                        : hospitalC.routingSource === 'LIVE_OSRM'
+                        ? 'Live OSRM'
+                        : 'Simulated Road Graph'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Limitations */}
+                <div className="text-xs space-y-1">
+                  <span className="font-semibold text-[#172B2A]">Limitations vs Hospital A:</span>
+                  <p className="text-[11px] text-[#8A5800] bg-[#FFF8E6] p-2 rounded-lg border border-[#F3E5AB]">
+                    {hospitalC.missingCapabilities.length > 0
+                      ? `Lacks: ${hospitalC.missingCapabilities.join(', ')}.`
+                      : 'Alternative stabilization center.'}
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <div className="p-4 bg-[#F6F8F8] border border-[#DCE5E3] rounded-xl text-center text-xs text-[#596B69]">
+                No tertiary facility identified in current quadrant.
+              </div>
+            )}
+          </div>
+
+          {/* Action Footer */}
+          <div className="p-4 bg-[#F6F8F8] border-t border-[#DCE5E3]">
+            {destination && destination.hospitalId === hospitalC?.hospitalId ? (
+              <div className="p-2 rounded-xl bg-[#EAF5F2] border border-[#DCE5E3] text-center text-xs font-bold text-[#174C49]">
+                Currently Diverted to Backup C
+              </div>
+            ) : destination ? (
+              <button
+                onClick={() => hospitalC && onDivert && onDivert(hospitalC.hospitalId)}
+                disabled={!hospitalC || diverting}
+                className="w-full py-2 bg-white border border-[#DCE5E3] hover:bg-[#F6F8F8] text-[#596B69] hover:text-[#172B2A] font-semibold text-xs rounded-xl shadow-xs transition flex items-center justify-center gap-1.5"
+              >
+                <ArrowRightLeft className="w-3.5 h-3.5" />
+                {diverting ? 'Diverting...' : `Divert to Backup C (${hospitalC?.code || 'Backup C'})`}
+              </button>
+            ) : (
+              <div className="text-center text-[11px] text-[#596B69]">
+                Standby ticket issued automatically on dispatch
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Tri-Agent Decision Pipeline Breakdown */}
+      <div className="bg-white border border-[#DCE5E3] rounded-2xl p-5 space-y-4">
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-bold text-[#172B2A] flex items-center gap-2">
+            <Info className="w-4 h-4 text-[#176B68]" />
+            Tri-Agent Decision Pipeline Breakdown
+          </h3>
+          <span className="text-[11px] text-[#596B69] font-medium">
+            3-Tier Algorithmic Orchestration
+          </span>
+        </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
-          <div className="p-3 bg-slate-950 rounded-xl border border-slate-850 space-y-1">
-            <span className="font-bold text-blue-400">Agent 1 — Requirements</span>
-            <p className="text-slate-400 leading-relaxed text-[11px]">
+          <div className="p-3.5 bg-[#F6F8F8] rounded-xl border border-[#DCE5E3] space-y-1">
+            <span className="font-bold text-[#174C49]">Agent 1 — Requirements</span>
+            <p className="text-[#596B69] leading-relaxed text-[11px]">
               Synthesizes patient vitals & telemetry into confirmed full-care and immediate stabilization criteria.
             </p>
           </div>
 
-          <div className="p-3 bg-slate-950 rounded-xl border border-slate-850 space-y-1">
-            <span className="font-bold text-amber-400">Agent 2 — Suitability</span>
-            <p className="text-slate-400 leading-relaxed text-[11px]">
-              Filters 5 hospitals by capabilities, equipment availability (Available &gt; 0), and specialist team readiness.
+          <div className="p-3.5 bg-[#F6F8F8] rounded-xl border border-[#DCE5E3] space-y-1">
+            <span className="font-bold text-[#8A5800]">Agent 2 — Suitability</span>
+            <p className="text-[#596B69] leading-relaxed text-[11px]">
+              Filters regional hospitals by capabilities, equipment availability (Available &gt; 0), and specialist team readiness.
             </p>
           </div>
 
-          <div className="p-3 bg-slate-950 rounded-xl border border-slate-850 space-y-1">
-            <span className="font-bold text-emerald-400">Agent 3 — Coordination & Time</span>
-            <p className="text-slate-400 leading-relaxed text-[11px]">
+          <div className="p-3.5 bg-[#F6F8F8] rounded-xl border border-[#DCE5E3] space-y-1">
+            <span className="font-bold text-[#237048]">Agent 3 — Coordination & Time</span>
+            <p className="text-[#596B69] leading-relaxed text-[11px]">
               Calculates shortest road path & time-to-care to select Primary Destination A and current-position Backups B &amp; C.
             </p>
           </div>
         </div>
+
+        {recommendation.allCandidates && recommendation.allCandidates.length > 0 && (
+          <div className="overflow-x-auto pt-2 border-t border-[#DCE5E3]">
+            <table className="w-full text-xs text-left">
+              <thead>
+                <tr className="border-b border-[#DCE5E3] text-[11px] font-semibold text-[#596B69] bg-[#F6F8F8]">
+                  <th className="py-2 px-3">Hospital</th>
+                  <th className="py-2 px-3">Definitive Status</th>
+                  <th className="py-2 px-3">Transit ETA</th>
+                  <th className="py-2 px-3">Time-to-Care</th>
+                  <th className="py-2 px-3">Suitability</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#DCE5E3]">
+                {recommendation.allCandidates.map((cand) => (
+                  <tr key={cand.hospitalId} className="hover:bg-[#F6F8F8] transition-colors">
+                    <td className="py-2 px-3 font-semibold text-[#172B2A]">
+                      {cand.name} ({cand.code})
+                    </td>
+                    <td className="py-2 px-3">
+                      <span
+                        className={`px-2 py-0.5 rounded text-[10px] font-semibold ${
+                          cand.eligible
+                            ? 'bg-[#EAF5F2] text-[#176B68]'
+                            : 'bg-red-50 text-red-700'
+                        }`}
+                      >
+                        {cand.eligible ? 'Eligible' : 'Ineligible'}
+                      </span>
+                    </td>
+                    <td className="py-2 px-3 text-[#596B69]">~{Math.round(cand.travelSeconds / 60)}m</td>
+                    <td className="py-2 px-3 font-bold text-[#172B2A]">~{Math.round(cand.timeToCareSeconds / 60)}m</td>
+                    <td className="py-2 px-3 font-semibold text-[#174C49]">{cand.readiness}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   );

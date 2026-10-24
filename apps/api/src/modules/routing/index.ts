@@ -1,5 +1,15 @@
 import { RoadGraphDto, RoadNodeDto, RoadEdgeDto } from '@goldenhour/contracts';
 import { SEEDED_ROAD_GRAPH } from '@goldenhour/scenario-fixtures';
+import {
+  LatLngDto,
+  GeographicRouteResult,
+  GeographicRoutingProvider,
+  RoutingSource,
+} from './types.js';
+import { callGoogleComputeRoutes } from './google-routes.js';
+
+export * from './types.js';
+export * from './google-routes.js';
 
 export interface RouteResult {
   fromNodeId: string;
@@ -9,7 +19,7 @@ export interface RouteResult {
   travelSeconds: number;
   edgeIds: string[];
   isLive: boolean;
-  routingSource: 'SIMULATED_GRAPH' | 'LIVE_OSRM' | 'FALLBACK_GRAPH';
+  routingSource: 'SIMULATED_GRAPH' | 'GOOGLE_ROUTES' | 'LIVE_OSRM' | 'FALLBACK_GRAPH';
 }
 
 export interface RoutingProvider {
@@ -24,6 +34,7 @@ export interface RoutingProvider {
 
 /**
  * Dijkstra Shortest Path Router over the Seeded Road Network Graph
+ * Retained for deterministic simulation and graph calculations.
  */
 export class SimulatedRoutingProvider implements RoutingProvider {
   private graph: RoadGraphDto;
@@ -70,7 +81,6 @@ export class SimulatedRoutingProvider implements RoutingProvider {
       };
     }
 
-    // Build Adjacency List (bidirectional city road network)
     interface EdgeWithWeight {
       edgeId: string;
       neighbor: string;
@@ -87,7 +97,6 @@ export class SimulatedRoutingProvider implements RoutingProvider {
       const traffic = trafficMultiplierOverrides[edge.id] ?? edge.trafficMultiplier ?? 1.0;
       const durationSeconds = Math.round(edge.baseTravelSeconds * traffic);
 
-      // From -> To
       adjacency.get(edge.from)?.push({
         edgeId: edge.id,
         neighbor: edge.to,
@@ -95,7 +104,6 @@ export class SimulatedRoutingProvider implements RoutingProvider {
         durationSeconds,
       });
 
-      // To -> From (two-way roads)
       adjacency.get(edge.to)?.push({
         edgeId: edge.id,
         neighbor: edge.from,
@@ -104,7 +112,6 @@ export class SimulatedRoutingProvider implements RoutingProvider {
       });
     }
 
-    // Dijkstra's Algorithm
     const distances: Map<string, number> = new Map();
     const meterDistances: Map<string, number> = new Map();
     const previous: Map<string, { nodeId: string; edgeId: string } | null> = new Map();
@@ -130,11 +137,11 @@ export class SimulatedRoutingProvider implements RoutingProvider {
       }
 
       if (!current || minDuration === Number.MAX_SAFE_INTEGER) {
-        break; // Unreachable
+        break;
       }
 
       if (current === toNodeId) {
-        break; // Destination reached
+        break;
       }
 
       unvisited.delete(current);
@@ -152,7 +159,6 @@ export class SimulatedRoutingProvider implements RoutingProvider {
       }
     }
 
-    // Reconstruct path
     const pathNodeIds: string[] = [];
     const edgeIds: string[] = [];
     let curr: string | null = toNodeId;
@@ -186,11 +192,150 @@ export class SimulatedRoutingProvider implements RoutingProvider {
 }
 
 /**
- * Live Routing Adapter (Phase 12 Live Maps Integration)
- * Adapter connecting to external routing engines (e.g., OSRM / OpenStreetMap / Google Directions).
- * If the service URL is missing or fails, it falls back to the SimulatedRoutingProvider
- * and explicitly marks isLive: false and routingSource: 'FALLBACK_GRAPH'.
- * Never labels simulated fallback data as live.
+ * Simulated Geographic Routing Provider
+ * Maps coordinates to the road network graph and returns road-following LatLng path geometry.
+ */
+export class SimulatedGeographicRoutingProvider implements GeographicRoutingProvider {
+  private graphRouter: SimulatedRoutingProvider;
+  private graph: RoadGraphDto;
+
+  constructor(graph: RoadGraphDto = SEEDED_ROAD_GRAPH) {
+    this.graph = graph;
+    this.graphRouter = new SimulatedRoutingProvider(graph);
+  }
+
+  public async calculateGeographicRoute(
+    origin: LatLngDto,
+    dest: { hospitalId: string; hospitalName: string; lat: number; lng: number },
+    trafficOverrides: Record<string, number> = {}
+  ): Promise<GeographicRouteResult> {
+    const originNode = this.findClosestGraphNode(origin.lat, origin.lng);
+    const destNode = this.findClosestGraphNode(dest.lat, dest.lng);
+
+    try {
+      const graphRoute = this.graphRouter.calculateRoute(originNode.id, destNode.id, trafficOverrides);
+
+      const pathCoordinates: LatLngDto[] = [origin];
+      for (const nodeId of graphRoute.pathNodeIds) {
+        const node = this.graph.nodes.find((n) => n.id === nodeId);
+        if (node) {
+          pathCoordinates.push({ lat: node.lat, lng: node.lng });
+        }
+      }
+      pathCoordinates.push({ lat: dest.lat, lng: dest.lng });
+
+      return {
+        routeId: `route-${dest.hospitalId}-${Date.now()}`,
+        originLat: origin.lat,
+        originLng: origin.lng,
+        destHospitalId: dest.hospitalId,
+        destHospitalName: dest.hospitalName,
+        distanceMeters: graphRoute.totalDistanceMeters,
+        durationSeconds: graphRoute.travelSeconds,
+        routingSource: 'SIMULATED_GRAPH',
+        trafficMode: Object.keys(trafficOverrides).length > 0 ? 'SIMULATED_CONGESTED' : 'SIMULATED_NORMAL',
+        pathCoordinates,
+        calculatedAt: new Date().toISOString(),
+        status: 'AVAILABLE',
+      };
+    } catch (err: any) {
+      return {
+        routeId: `route-${dest.hospitalId}-${Date.now()}`,
+        originLat: origin.lat,
+        originLng: origin.lng,
+        destHospitalId: dest.hospitalId,
+        destHospitalName: dest.hospitalName,
+        distanceMeters: 0,
+        durationSeconds: 9999,
+        routingSource: 'SIMULATED_GRAPH',
+        trafficMode: 'SIMULATED_NORMAL',
+        pathCoordinates: [origin, { lat: dest.lat, lng: dest.lng }],
+        calculatedAt: new Date().toISOString(),
+        status: 'UNAVAILABLE',
+        unavailabilityReason: err.message,
+      };
+    }
+  }
+
+  private findClosestGraphNode(lat: number, lng: number): RoadNodeDto {
+    let closest = this.graph.nodes[0];
+    let minD = Number.MAX_VALUE;
+    for (const node of this.graph.nodes) {
+      const d = (node.lat - lat) ** 2 + (node.lng - lng) ** 2;
+      if (d < minD) {
+        minD = d;
+        closest = node;
+      }
+    }
+    return closest;
+  }
+}
+
+/**
+ * Google Routes Provider (Routes API v2)
+ * Connects to Google Compute Routes for traffic-aware travel times and polylines.
+ * Gracefully falls back to SimulatedGeographicRoutingProvider on network failure,
+ * timeout, or missing key, explicitly labelling output as FALLBACK_GRAPH.
+ */
+export class GoogleRoutesProvider implements GeographicRoutingProvider {
+  private fallbackProvider: SimulatedGeographicRoutingProvider;
+  private apiKey: string;
+
+  constructor(apiKey?: string, graph: RoadGraphDto = SEEDED_ROAD_GRAPH) {
+    this.apiKey = apiKey || process.env.GOOGLE_ROUTES_API_KEY || '';
+    this.fallbackProvider = new SimulatedGeographicRoutingProvider(graph);
+  }
+
+  public async calculateGeographicRoute(
+    origin: LatLngDto,
+    dest: { hospitalId: string; hospitalName: string; lat: number; lng: number },
+    trafficOverrides: Record<string, number> = {}
+  ): Promise<GeographicRouteResult> {
+    if (!this.apiKey || this.apiKey.trim() === '' || this.apiKey.startsWith('mock-unreachable')) {
+      const fallback = await this.fallbackProvider.calculateGeographicRoute(origin, dest, trafficOverrides);
+      return {
+        ...fallback,
+        routingSource: 'FALLBACK_GRAPH',
+      };
+    }
+
+    try {
+      const res = await callGoogleComputeRoutes({
+        origin,
+        destination: { lat: dest.lat, lng: dest.lng },
+        apiKey: this.apiKey,
+        timeoutMs: 5000,
+      });
+
+      return {
+        routeId: `route-${dest.hospitalId}-${Date.now()}`,
+        originLat: origin.lat,
+        originLng: origin.lng,
+        destHospitalId: dest.hospitalId,
+        destHospitalName: dest.hospitalName,
+        distanceMeters: res.distanceMeters,
+        durationSeconds: res.durationSeconds,
+        routingSource: 'GOOGLE_ROUTES',
+        trafficMode: 'TRAFFIC_AWARE',
+        encodedPolyline: res.encodedPolyline,
+        pathCoordinates: res.pathCoordinates,
+        calculatedAt: new Date().toISOString(),
+        status: 'AVAILABLE',
+      };
+    } catch (err: any) {
+      console.warn('[GoogleRoutesProvider] Google Routes call failed, using fallback:', err.message);
+      const fallback = await this.fallbackProvider.calculateGeographicRoute(origin, dest, trafficOverrides);
+      return {
+        ...fallback,
+        routingSource: 'FALLBACK_GRAPH',
+        unavailabilityReason: `Google Routes unavailable: ${err.message}`,
+      };
+    }
+  }
+}
+
+/**
+ * Legacy Live Routing Adapter (kept for backward compatibility with Phase 12 tests)
  */
 export class LiveRoutingAdapter implements RoutingProvider {
   private fallbackProvider: SimulatedRoutingProvider;
@@ -220,8 +365,6 @@ export class LiveRoutingAdapter implements RoutingProvider {
     }
 
     try {
-      // In production/demo, when serviceUrl is set, query external service or validate
-      // If service URL is 'mock-live' or functional endpoint:
       if (this.serviceUrl.startsWith('http://mock-unreachable')) {
         throw new Error('ECONNREFUSED: Live routing service unreachable');
       }
@@ -252,3 +395,12 @@ export function getRoutingProvider(): RoutingProvider {
 }
 
 export const routingProvider = getRoutingProvider();
+
+export function getGeographicRoutingProvider(): GeographicRoutingProvider {
+  if (process.env.GOOGLE_ROUTES_API_KEY) {
+    return new GoogleRoutesProvider(process.env.GOOGLE_ROUTES_API_KEY);
+  }
+  return new SimulatedGeographicRoutingProvider();
+}
+
+export const geographicRoutingProvider = getGeographicRoutingProvider();

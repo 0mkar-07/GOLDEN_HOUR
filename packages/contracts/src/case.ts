@@ -124,16 +124,32 @@ export const DestinationSchema = z.object({
 
 export type DestinationDto = z.infer<typeof DestinationSchema>;
 
+export const PositionSourceEnum = z.enum(['SIMULATED', 'DEVICE_GPS']);
+export type PositionSource = z.infer<typeof PositionSourceEnum>;
+
 export const AmbulancePositionSchema = z.object({
   ambulanceId: z.string(),
-  x: z.number(),
-  y: z.number(),
-  lat: z.number(),
-  lng: z.number(),
+  x: z.number().default(0),
+  y: z.number().default(0),
+  lat: z.number().min(-90).max(90),
+  lng: z.number().min(-180).max(180),
   speed: z.number().default(0),
   heading: z.number().default(0),
+  accuracyMeters: z.number().nonnegative().optional(),
+  source: PositionSourceEnum.default('SIMULATED'),
   serverSequence: z.number().int().nonnegative(),
   observedAt: z.string(),
 });
 
 export type AmbulancePositionDto = z.infer<typeof AmbulancePositionSchema>;
+
+export const SubmitDevicePositionSchema = z.object({
+  lat: z.number().min(-90).max(90),
+  lng: z.number().min(-180).max(180),
+  speed: z.number().nonnegative().optional().default(0),
+  heading: z.number().min(0).max(360).optional().default(0),
+  accuracyMeters: z.number().nonnegative().optional(),
+  observedAt: z.string().optional(),
+});
+
+export type SubmitDevicePositionRequest = z.infer<typeof SubmitDevicePositionSchema>;

@@ -18,6 +18,7 @@ import {
   Check,
   XCircle,
   ShieldCheck,
+  MapPin,
 } from 'lucide-react';
 import {
   HospitalDto,
@@ -75,141 +76,39 @@ export const HospitalPage: React.FC = () => {
     }
   }, []);
 
-  // Load selected hospital details, resources, staff, and incoming requests
+  // Load data for selected hospital
   const loadHospitalData = useCallback(async (hospId: string) => {
     setLoading(true);
     setError(null);
     try {
-      const [hospRes, poolsRes, staffRes, reqRes, allocRes] = await Promise.all([
+      const [hospRes, poolsRes, staffRes] = await Promise.all([
         apiClient.getHospital(hospId),
         apiClient.getHospitalResources(hospId),
         apiClient.getHospitalStaff(hospId),
-        apiClient.listHospitalRequests(hospId),
-        apiClient.listHospitalAllocations(hospId).catch(() => ({ allocations: [] })),
       ]);
+
       setCurrentHospital(hospRes.hospital);
-      setResourcePools(poolsRes.resourcePools);
-      setStaffList(staffRes.staffAvailability);
-      setRequests(reqRes.requests || []);
-      setAllocations(allocRes.allocations || []);
+      setResourcePools(poolsRes.resourcePools || []);
+      setStaffList(staffRes.staffAvailability || []);
+
+      // Active requests and allocations
+      try {
+        const [reqsRes, allocsRes] = await Promise.all([
+          apiClient.listHospitalRequests(hospId),
+          apiClient.listHospitalAllocations(hospId),
+        ]);
+        setRequests(reqsRes?.requests || []);
+        setAllocations(allocsRes?.allocations || []);
+      } catch {
+        setRequests([]);
+        setAllocations([]);
+      }
     } catch (err: any) {
       setError(err?.message || 'Failed to load hospital state');
     } finally {
       setLoading(false);
     }
   }, []);
-
-  // Real-Time Event Subscriptions
-  useEffect(() => {
-    const unsubReqCreated = subscribeToRealtimeEvent('request.created', (event) => {
-      const newReq = event.payload as HospitalRequestDto;
-      if (newReq.hospitalId === selectedHospitalId) {
-        setRequests((prev) => [newReq, ...prev.filter((r) => r.id !== newReq.id)]);
-      }
-    });
-
-    const unsubReqUpdated = subscribeToRealtimeEvent('request.updated', (event) => {
-      const updatedReq = event.payload as HospitalRequestDto;
-      setRequests((prev) =>
-        prev.map((r) => (r.id === updatedReq.id ? updatedReq : r))
-      );
-    });
-
-    const unsubInv = subscribeToRealtimeEvent('inventory.updated', (event) => {
-      if ((event.payload as any)?.hospitalId === selectedHospitalId) {
-        // Refetch inventory to reflect new reservations
-        apiClient.getHospitalResources(selectedHospitalId).then((res) => {
-          setResourcePools(res.resourcePools);
-        });
-      }
-    });
-
-    const unsubAlloc = subscribeToRealtimeEvent('allocation.updated', (event) => {
-      const updated = event.payload as AllocationDto;
-      if (updated.hospitalId === selectedHospitalId) {
-        setAllocations((prev) =>
-          prev.map((a) => (a.id === updated.id ? updated : a))
-        );
-      }
-    });
-
-    return () => {
-      unsubReqCreated();
-      unsubReqUpdated();
-      unsubInv();
-      unsubAlloc();
-    };
-  }, [selectedHospitalId]);
-
-  // Handle Start In-Use (Phase 8: RESERVED -> IN_USE)
-  const handleStartUse = async (allocId: string, expectedVersion: number) => {
-    try {
-      setActionSuccess(null);
-      setError(null);
-      const res = await apiClient.startUseAllocation(allocId, { expectedVersion });
-      setAllocations((prev) =>
-        prev.map((a) => (a.id === allocId ? res.allocation : a))
-      );
-      setActionSuccess('Resource marked IN_USE. Active clinical occupancy begun.');
-      setTimeout(() => setActionSuccess(null), 3500);
-      loadHospitalData(selectedHospitalId);
-    } catch (err: any) {
-      setError(err?.message || 'Failed to start resource use');
-    }
-  };
-
-  // Handle Explicit Release (Phase 8: IN_USE / RESERVED -> RELEASED)
-  const handleRelease = async (allocId: string, expectedVersion: number) => {
-    try {
-      setActionSuccess(null);
-      setError(null);
-      const res = await apiClient.releaseAllocation(allocId, { expectedVersion });
-      setAllocations((prev) =>
-        prev.map((a) => (a.id === allocId ? res.allocation : a))
-      );
-      setActionSuccess('Resource successfully RELEASED! Available count restored to hospital inventory.');
-      setTimeout(() => setActionSuccess(null), 3500);
-      loadHospitalData(selectedHospitalId);
-    } catch (err: any) {
-      setError(err?.message || 'Failed to release resource');
-    }
-  };
-
-  // Handle Accept Incoming Request (Triggers atomic reservation)
-  const handleAcceptRequest = async (requestId: string) => {
-    try {
-      setActionSuccess(null);
-      setError(null);
-      const res = await apiClient.acceptHospitalRequest(requestId);
-
-      setRequests((prev) =>
-        prev.map((r) => (r.id === requestId ? res.request : r))
-      );
-      setActionSuccess(`Request accepted! Case is now EN_ROUTE. Required resources atomically reserved.`);
-      setTimeout(() => setActionSuccess(null), 4000);
-
-      // Reload inventory pools to show new reservation numbers
-      loadHospitalData(selectedHospitalId);
-    } catch (err: any) {
-      setError(err?.message || 'Failed to accept hospital request');
-    }
-  };
-
-  // Handle Decline Request
-  const handleDeclineRequest = async (requestId: string) => {
-    try {
-      setActionSuccess(null);
-      setError(null);
-      const res = await apiClient.declineHospitalRequest(requestId);
-      setRequests((prev) =>
-        prev.map((r) => (r.id === requestId ? res.request : r))
-      );
-      setActionSuccess('Request declined.');
-      setTimeout(() => setActionSuccess(null), 3500);
-    } catch (err: any) {
-      setError(err?.message || 'Failed to decline request');
-    }
-  };
 
   useEffect(() => {
     loadHospitals();
@@ -221,7 +120,45 @@ export const HospitalPage: React.FC = () => {
     }
   }, [selectedHospitalId, loadHospitalData]);
 
-  // Handle Receiving Status change
+  // Real-Time Socket.IO Subscriptions
+  useEffect(() => {
+    if (!selectedHospitalId) return;
+
+    const unsubReq = subscribeToRealtimeEvent('request.created', (event: any) => {
+      if (event.payload?.hospitalId === selectedHospitalId) {
+        setRequests((prev) => [event.payload, ...prev.filter((r) => r.id !== event.payload.id)]);
+      }
+    });
+
+    const unsubReqUpd = subscribeToRealtimeEvent('request.updated', (event: any) => {
+      if (event.payload?.hospitalId === selectedHospitalId) {
+        setRequests((prev) =>
+          prev.map((r) => (r.id === event.payload.id ? event.payload : r))
+        );
+      }
+    });
+
+    const unsubInv = subscribeToRealtimeEvent('inventory.updated', (event: any) => {
+      if (event.payload?.hospitalId === selectedHospitalId) {
+        setResourcePools((prev) =>
+          prev.map((p) => (p.id === event.payload.id ? event.payload : p))
+        );
+      }
+    });
+
+    const unsubAlloc = subscribeToRealtimeEvent('allocation.updated', () => {
+      apiClient.listHospitalAllocations(selectedHospitalId).then((res) => setAllocations(res.allocations));
+    });
+
+    return () => {
+      unsubReq();
+      unsubReqUpd();
+      unsubInv();
+      unsubAlloc();
+    };
+  }, [selectedHospitalId]);
+
+  // Handle Receiving Status Change
   const handleStatusChange = async (newStatus: ReceivingStatus) => {
     if (!currentHospital) return;
     try {
@@ -232,14 +169,14 @@ export const HospitalPage: React.FC = () => {
         expectedVersion: currentHospital.version,
       });
       setCurrentHospital(res.hospital);
-      setActionSuccess(`Receiving status updated to ${newStatus}`);
+      setActionSuccess(`Hospital receiving status updated to ${newStatus}`);
       setTimeout(() => setActionSuccess(null), 3500);
     } catch (err: any) {
       setError(err?.message || 'Failed to update receiving status');
     }
   };
 
-  // Handle Receiving Delay change
+  // Handle Receiving Delay Change
   const handleDelayChange = async (deltaSeconds: number) => {
     if (!currentHospital) return;
     const newDelay = Math.max(0, currentHospital.receivingDelaySeconds + deltaSeconds);
@@ -251,15 +188,82 @@ export const HospitalPage: React.FC = () => {
         expectedVersion: currentHospital.version,
       });
       setCurrentHospital(res.hospital);
-      setActionSuccess(`Intake delay updated to ${Math.round(newDelay / 60)} minutes (${newDelay}s)`);
+      setActionSuccess(`Intake delay updated to ${Math.round(newDelay / 60)} minutes`);
       setTimeout(() => setActionSuccess(null), 3500);
     } catch (err: any) {
-      setError(err?.message || 'Failed to update intake delay');
+      setError(err?.message || 'Failed to update delay');
     }
   };
 
-  // Open Edit Modal for a Resource Pool
-  const startEditPool = (pool: ResourcePoolDto) => {
+  // Handle Accept Incoming Request (Atomic Reservation)
+  const handleAcceptRequest = async (reqId: string) => {
+    try {
+      setActionSuccess(null);
+      setError(null);
+      const res = await apiClient.acceptHospitalRequest(reqId);
+      setRequests((prev) => prev.map((r) => (r.id === reqId ? res.request : r)));
+      setActionSuccess('Emergency Case Accepted! Required equipment and staff reserved atomically.');
+      setTimeout(() => setActionSuccess(null), 4000);
+
+      // Refresh inventory and allocations
+      loadHospitalData(selectedHospitalId);
+    } catch (err: any) {
+      setError(err?.message || 'Failed to accept case request');
+    }
+  };
+
+  // Handle Decline Incoming Request
+  const handleDeclineRequest = async (reqId: string) => {
+    try {
+      setActionSuccess(null);
+      setError(null);
+      const res = await apiClient.declineHospitalRequest(reqId);
+      setRequests((prev) => prev.map((r) => (r.id === reqId ? res.request : r)));
+      setActionSuccess('Request declined. Case diverted.');
+      setTimeout(() => setActionSuccess(null), 3500);
+    } catch (err: any) {
+      setError(err?.message || 'Failed to decline request');
+    }
+  };
+
+  // Start In-Use
+  const handleStartUse = async (allocId: string) => {
+    try {
+      setActionSuccess(null);
+      setError(null);
+      const alloc = allocations.find((a) => a.id === allocId);
+      const res = await apiClient.startUseAllocation(allocId, {
+        expectedVersion: alloc?.version ?? 1,
+      });
+      setAllocations((prev) => prev.map((a) => (a.id === allocId ? res.allocation : a)));
+      setActionSuccess('Equipment transitioned to IN_USE.');
+      setTimeout(() => setActionSuccess(null), 3500);
+      loadHospitalData(selectedHospitalId);
+    } catch (err: any) {
+      setError(err?.message || 'Failed to transition to in-use');
+    }
+  };
+
+  // Release Equipment
+  const handleRelease = async (allocId: string) => {
+    try {
+      setActionSuccess(null);
+      setError(null);
+      const alloc = allocations.find((a) => a.id === allocId);
+      const res = await apiClient.releaseAllocation(allocId, {
+        expectedVersion: alloc?.version ?? 1,
+      });
+      setAllocations((prev) => prev.map((a) => (a.id === allocId ? res.allocation : a)));
+      setActionSuccess('Equipment released and restored to available inventory.');
+      setTimeout(() => setActionSuccess(null), 3500);
+      loadHospitalData(selectedHospitalId);
+    } catch (err: any) {
+      setError(err?.message || 'Failed to release allocation');
+    }
+  };
+
+  // Open Edit Modal for Resource Pool
+  const openEditModal = (pool: ResourcePoolDto) => {
     setEditingPool(pool);
     setEditTotal(pool.totalCount);
     setEditOutOfService(pool.outOfServiceCount);
@@ -267,7 +271,12 @@ export const HospitalPage: React.FC = () => {
     setEditError(null);
   };
 
-  // Submit Pool Edit
+  const closeEditModal = () => {
+    setEditingPool(null);
+    setEditError(null);
+  };
+
+  // Save Resource Pool Edits
   const handleSavePool = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingPool) return;
@@ -283,19 +292,17 @@ export const HospitalPage: React.FC = () => {
         expectedVersion: editingPool.version,
       });
 
-      // Update state locally
       setResourcePools((prev) =>
-        prev.map((p) => (p.id === res.resourcePool?.id || p.id === editingPool.id ? res.resourcePool : p))
+        prev.map((p) => (p.id === editingPool.id ? res.resourcePool : p))
       );
 
-      setEditingPool(null);
-      setActionSuccess(`Resource pool ${editingPool.resourceType} successfully updated.`);
+      setActionSuccess(`Inventory updated: ${res.resourcePool.resourceType} Available = ${res.resourcePool.availableCount}`);
       setTimeout(() => setActionSuccess(null), 3500);
-      // Reload in background to ensure all records sync
-      loadHospitalData(selectedHospitalId);
+      closeEditModal();
     } catch (err: any) {
-      if (err instanceof ApiError && err.statusCode === 409) {
-        setEditError('Conflict: This record was modified by another session. Please reload fresh values.');
+      if (err?.status === 409 || err?.statusCode === 409) {
+        setEditError('Conflict: Pool modified concurrently by another user. Reloading...');
+        loadHospitalData(selectedHospitalId);
       } else {
         setEditError(err?.message || 'Failed to update resource pool');
       }
@@ -304,7 +311,7 @@ export const HospitalPage: React.FC = () => {
     }
   };
 
-  // Quick Team Slot Increment/Decrement
+  // Quick Staff Slots Change
   const handleStaffSlotChange = async (staff: StaffAvailabilityDto, delta: number) => {
     const newSlots = Math.max(0, staff.availableTeamSlots + delta);
     try {
@@ -325,44 +332,47 @@ export const HospitalPage: React.FC = () => {
     }
   };
 
+  // Pending incoming requests
+  const pendingRequests = requests.filter((r) => r.status === RequestStatus.PENDING);
+
   return (
     <div className="space-y-6">
-      {/* Top Banner & Hospital Selector */}
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-sm">
+      {/* Top Banner & Hospital Facility Header */}
+      <div className="bg-white border border-[#DCE5E3] rounded-2xl p-5 shadow-xs">
         <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
           <div className="flex items-center gap-3">
-            <div className="p-3 bg-blue-500/10 border border-blue-500/30 rounded-xl text-blue-400">
+            <div className="p-2.5 bg-[#EAF5F2] border border-[#DCE5E3] rounded-xl text-[#176B68]">
               <Building2 className="w-6 h-6" />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h1 className="text-xl font-bold text-white tracking-tight">
+                <h1 className="text-xl font-bold text-[#172B2A] tracking-tight">
                   {currentHospital ? currentHospital.name : 'Hospital Command Portal'}
                 </h1>
                 {currentHospital && (
-                  <span className="text-xs px-2 py-0.5 rounded font-mono font-semibold bg-blue-500/20 text-blue-300 border border-blue-500/40">
+                  <span className="text-xs px-2 py-0.5 rounded font-mono font-semibold bg-[#EAF5F2] text-[#176B68] border border-[#DCE5E3]">
                     {currentHospital.code}
                   </span>
                 )}
               </div>
-              <p className="text-xs text-slate-400 mt-0.5">
+              <p className="text-xs text-[#596B69] mt-0.5">
                 {currentHospital?.address} • Coordinates: [{currentHospital?.location.lat}, {currentHospital?.location.lng}]
               </p>
             </div>
           </div>
 
-          {/* Hospital Switcher & Actions */}
+          {/* Facility Switcher & Actions */}
           <div className="flex items-center gap-2 flex-wrap">
-            <div className="flex items-center gap-2 bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 text-xs">
-              <span className="text-slate-400 font-medium">Viewing Facility:</span>
+            <div className="flex items-center gap-2 bg-[#F6F8F8] border border-[#DCE5E3] rounded-xl px-3 py-1.5 text-xs">
+              <span className="text-[#596B69] font-medium">Viewing Facility:</span>
               <select
                 aria-label="Active Facility"
                 value={selectedHospitalId}
                 onChange={(e) => setSelectedHospitalId(e.target.value)}
-                className="bg-transparent text-slate-200 font-semibold focus:outline-none cursor-pointer"
+                className="bg-transparent text-[#172B2A] font-semibold focus:outline-none cursor-pointer"
               >
                 {hospitals.map((h) => (
-                  <option key={h.id} value={h.id} className="bg-slate-900 text-slate-100">
+                  <option key={h.id} value={h.id} className="bg-white text-[#172B2A]">
                     {h.name} ({h.code})
                   </option>
                 ))}
@@ -373,7 +383,7 @@ export const HospitalPage: React.FC = () => {
               onClick={() => loadHospitalData(selectedHospitalId)}
               disabled={loading}
               title="Reload live inventory"
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium rounded-xl border border-slate-700 transition"
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-[#F6F8F8] text-[#172B2A] text-xs font-semibold rounded-xl border border-[#DCE5E3] transition shadow-xs"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
               Refresh
@@ -381,19 +391,19 @@ export const HospitalPage: React.FC = () => {
           </div>
         </div>
 
-        {/* Notifications & Status Banners */}
+        {/* Notifications */}
         {actionSuccess && (
-          <div className="mt-4 p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-xs text-emerald-300 flex items-center gap-2 animate-fadeIn">
-            <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
-            <span>{actionSuccess}</span>
+          <div className="mt-3 p-3 bg-[#EAF5F2] border border-[#DCE5E3] rounded-xl text-xs text-[#237048] flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 text-[#237048] shrink-0" />
+            <span className="font-medium">{actionSuccess}</span>
           </div>
         )}
 
         {error && (
-          <div className="mt-4 p-3 bg-rose-500/10 border border-rose-500/30 rounded-xl text-xs text-rose-300 flex items-center gap-2 animate-fadeIn">
-            <AlertTriangle className="w-4 h-4 text-rose-400 flex-shrink-0" />
-            <span className="flex-1">{error}</span>
-            <button onClick={() => setError(null)} className="text-slate-400 hover:text-white">
+          <div className="mt-3 p-3 bg-[#FDF2F2] border border-[#F8D7DA] rounded-xl text-xs text-[#B42318] flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 text-[#B42318] shrink-0" />
+            <span className="flex-1 font-medium">{error}</span>
+            <button onClick={() => setError(null)} className="text-[#596B69] hover:text-[#172B2A]">
               <X className="w-3.5 h-3.5" />
             </button>
           </div>
@@ -401,18 +411,18 @@ export const HospitalPage: React.FC = () => {
 
         {/* Facility Metadata Strip */}
         {currentHospital && (
-          <div className="mt-5 pt-4 border-t border-slate-800 grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="mt-4 pt-3.5 border-t border-[#DCE5E3] grid grid-cols-1 md:grid-cols-3 gap-4">
             {/* Receiving Status Control */}
-            <div className="bg-slate-950 p-3 rounded-xl border border-slate-850 space-y-1.5">
+            <div className="bg-[#F6F8F8] p-3 rounded-xl border border-[#DCE5E3] space-y-1.5">
               <div className="flex justify-between items-center text-xs">
-                <span className="text-slate-400 font-medium">Intake Status:</span>
+                <span className="text-[#596B69] font-medium">Emergency Intake Status:</span>
                 <span
                   className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
                     currentHospital.receivingStatus === ReceivingStatus.OPEN
-                      ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                      ? 'bg-[#EAF5F2] text-[#237048] border border-[#DCE5E3]'
                       : currentHospital.receivingStatus === ReceivingStatus.RESTRICTED
-                      ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
-                      : 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
+                      ? 'bg-[#FFF8E6] text-[#8A5800] border border-[#F3E5AB]'
+                      : 'bg-[#FDF2F2] text-[#B42318] border border-[#F8D7DA]'
                   }`}
                 >
                   {currentHospital.receivingStatus}
@@ -425,8 +435,8 @@ export const HospitalPage: React.FC = () => {
                     onClick={() => handleStatusChange(st)}
                     className={`flex-1 py-1 rounded text-[10px] font-semibold transition ${
                       currentHospital.receivingStatus === st
-                        ? 'bg-blue-600 text-white'
-                        : 'bg-slate-900 hover:bg-slate-800 text-slate-400'
+                        ? 'bg-[#174C49] text-white'
+                        : 'bg-white hover:bg-[#EAF5F2] text-[#596B69] border border-[#DCE5E3]'
                     }`}
                   >
                     {st === 'DIVERT_ALL' ? 'DIVERT' : st}
@@ -436,528 +446,395 @@ export const HospitalPage: React.FC = () => {
             </div>
 
             {/* Intake Receiving Delay */}
-            <div className="bg-slate-950 p-3 rounded-xl border border-slate-850 space-y-1.5">
+            <div className="bg-[#F6F8F8] p-3 rounded-xl border border-[#DCE5E3] space-y-1.5">
               <div className="flex justify-between items-center text-xs">
-                <span className="text-slate-400 font-medium">Internal Receiving Delay:</span>
-                <span className="font-mono font-semibold text-slate-200">
-                  {Math.round(currentHospital.receivingDelaySeconds / 60)}m ({currentHospital.receivingDelaySeconds}s)
+                <span className="text-[#596B69] font-medium">Internal Intake Delay:</span>
+                <span className="font-mono font-semibold text-[#172B2A]">
+                  +{Math.round(currentHospital.receivingDelaySeconds / 60)}m ({currentHospital.receivingDelaySeconds}s)
                 </span>
               </div>
               <div className="flex gap-2 pt-1">
                 <button
                   onClick={() => handleDelayChange(-60)}
-                  className="flex-1 py-1 rounded bg-slate-900 hover:bg-slate-800 text-slate-300 text-xs font-semibold"
+                  className="flex-1 py-1 rounded bg-white hover:bg-[#EAF5F2] text-[#172B2A] border border-[#DCE5E3] text-xs font-semibold"
                 >
                   -1 min
                 </button>
                 <button
                   onClick={() => handleDelayChange(60)}
-                  className="flex-1 py-1 rounded bg-slate-900 hover:bg-slate-800 text-slate-300 text-xs font-semibold"
+                  className="flex-1 py-1 rounded bg-white hover:bg-[#EAF5F2] text-[#172B2A] border border-[#DCE5E3] text-xs font-semibold"
                 >
                   +1 min
                 </button>
               </div>
             </div>
 
-            {/* Version & Capabilities */}
-            <div className="bg-slate-950 p-3 rounded-xl border border-slate-850 space-y-1">
-              <div className="flex justify-between items-center text-xs">
-                <span className="text-slate-400 font-medium">Record Version:</span>
-                <span className="font-mono text-slate-300">v{currentHospital.version}</span>
-              </div>
-              <div className="text-[11px] text-slate-400 truncate">
-                Capabilities: {currentHospital.capabilities.join(', ')}
+            {/* Verified Capabilities */}
+            <div className="bg-[#F6F8F8] p-3 rounded-xl border border-[#DCE5E3] space-y-1">
+              <span className="text-xs text-[#596B69] font-medium">Verified Capabilities:</span>
+              <div className="flex flex-wrap gap-1 pt-0.5">
+                {currentHospital.capabilities.map((c) => (
+                  <span
+                    key={c}
+                    className="px-1.5 py-0.5 rounded bg-white border border-[#DCE5E3] text-[10px] font-medium text-[#172B2A]"
+                  >
+                    {c}
+                  </span>
+                ))}
               </div>
             </div>
           </div>
         )}
       </div>
 
-      {/* Main Grid: Resource Pools & Staff Readiness */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Resource Pools (Span 2 cols) */}
-        <div className="lg:col-span-2 space-y-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-4">
-              <div>
-                <h2 className="text-base font-bold text-white flex items-center gap-2">
-                  <Layers className="w-5 h-5 text-blue-400" />
-                  Live Resource Capacity & Occupancy
-                </h2>
-                <p className="text-xs text-slate-400 mt-0.5">
-                  Formula: <code className="text-blue-300">Available = Total - OutOfService - External - Reserved - InUse</code>
-                </p>
-              </div>
-              <span className="text-xs px-2.5 py-1 rounded-full bg-slate-800 text-slate-300 font-mono">
-                {resourcePools.length} Pools Configured
-              </span>
-            </div>
-
-            {/* Pools List */}
-            <div className="space-y-3">
-              {resourcePools.map((pool) => {
-                const committed = pool.outOfServiceCount + pool.externalOccupancy + pool.reservedCount + pool.inUseCount;
-                const percentAvailable = pool.totalCount > 0 ? (pool.availableCount / pool.totalCount) * 100 : 0;
-
-                return (
-                  <div
-                    key={pool.id}
-                    className="p-4 bg-slate-950/70 border border-slate-850 rounded-xl space-y-3 hover:border-slate-800 transition"
-                  >
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                      <div className="flex items-center gap-2.5">
-                        <span className="font-bold text-sm text-slate-100">{pool.resourceType}</span>
-                        <span
-                          className={`text-xs px-2 py-0.5 rounded-full font-mono font-bold ${
-                            pool.availableCount > 0
-                              ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30'
-                              : 'bg-rose-500/10 text-rose-400 border border-rose-500/30'
-                          }`}
-                        >
-                          {pool.availableCount} Available
-                        </span>
-                      </div>
-
-                      <div className="flex items-center gap-3">
-                        <div className="text-xs text-slate-400 font-mono">
-                          <span>Total: <strong className="text-slate-200">{pool.totalCount}</strong></span> •{' '}
-                          <span>Ext: <strong className="text-slate-300">{pool.externalOccupancy}</strong></span> •{' '}
-                          <span>Reserved: <strong className="text-amber-400">{pool.reservedCount}</strong></span> •{' '}
-                          <span>In Use: <strong className="text-blue-400">{pool.inUseCount}</strong></span> •{' '}
-                          <span>OOS: <strong className="text-rose-400">{pool.outOfServiceCount}</strong></span>
-                        </div>
-
-                        <button
-                          onClick={() => startEditPool(pool)}
-                          className="p-1.5 bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white rounded-lg border border-slate-800 transition"
-                          title="Edit capacity numbers"
-                        >
-                          <Edit3 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Progress Visualizer */}
-                    <div className="w-full h-2.5 bg-slate-900 rounded-full overflow-hidden flex">
-                      {/* Available (Green) */}
-                      <div
-                        style={{ width: `${percentAvailable}%` }}
-                        className="bg-emerald-500 transition-all duration-300"
-                        title={`Available: ${pool.availableCount}`}
-                      />
-                      {/* Reserved (Amber) */}
-                      <div
-                        style={{ width: `${(pool.reservedCount / (pool.totalCount || 1)) * 100}%` }}
-                        className="bg-amber-500 transition-all duration-300"
-                        title={`Reserved: ${pool.reservedCount}`}
-                      />
-                      {/* In Use (Blue) */}
-                      <div
-                        style={{ width: `${(pool.inUseCount / (pool.totalCount || 1)) * 100}%` }}
-                        className="bg-blue-500 transition-all duration-300"
-                        title={`In Use: ${pool.inUseCount}`}
-                      />
-                      {/* External / OOS (Slate) */}
-                      <div
-                        style={{
-                          width: `${((pool.externalOccupancy + pool.outOfServiceCount) / (pool.totalCount || 1)) * 100}%`,
-                        }}
-                        className="bg-slate-700 transition-all duration-300"
-                        title={`External & Out of Service: ${pool.externalOccupancy + pool.outOfServiceCount}`}
-                      />
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+      {/* 1. Incoming Case Requests Banner (Placed Prominently Before Inventory) */}
+      <div className="bg-white border border-[#DCE5E3] rounded-2xl p-5 space-y-4 shadow-xs">
+        <div className="flex items-center justify-between border-b border-[#DCE5E3] pb-3">
+          <div className="flex items-center gap-2">
+            <Bell className="w-5 h-5 text-[#176B68]" />
+            <h2 className="text-base font-bold text-[#172B2A]">
+              Incoming Emergency Case Requests ({pendingRequests.length} Pending)
+            </h2>
           </div>
+          <span className="text-[11px] text-[#596B69]">
+            Main Requests lock equipment on accept; Standby tickets provide live visibility
+          </span>
+        </div>
 
-          {/* Active Case Allocations (Phase 8) */}
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <div>
-                <h2 className="text-base font-bold text-white flex items-center gap-2">
-                  <ShieldCheck className="w-5 h-5 text-blue-400" />
-                  Active Case Equipment Allocations
-                </h2>
-                <p className="text-xs text-slate-400 mt-0.5">
-                  Lifecycle: <span className="text-amber-400 font-semibold">RESERVED</span> &rarr;{' '}
-                  <span className="text-blue-400 font-semibold">IN_USE</span> &rarr;{' '}
-                  <span className="text-emerald-400 font-semibold">RELEASED</span>. Arrival does not release equipment.
-                </p>
-              </div>
-              <span className="text-xs font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-300 font-bold">
-                {allocations.filter((a) => a.state !== AllocationState.RELEASED).length} Active
-              </span>
-            </div>
-
-            <div className="space-y-3">
-              {allocations.length === 0 ? (
-                <div className="text-xs text-slate-500 py-4 text-center">
-                  No active equipment allocations recorded for this facility.
-                </div>
-              ) : (
-                allocations.map((alloc) => {
-                  const isReserved = alloc.state === AllocationState.RESERVED;
-                  const isInUse = alloc.state === AllocationState.IN_USE;
-                  const isReleased = alloc.state === AllocationState.RELEASED;
-
-                  return (
-                    <div
-                      key={alloc.id}
-                      className={`p-3.5 bg-slate-950 rounded-xl border space-y-2 transition ${
-                        isReserved
-                          ? 'border-amber-500/30 bg-amber-950/10'
-                          : isInUse
-                          ? 'border-blue-500/30 bg-blue-950/10'
-                          : 'border-slate-800 opacity-60'
+        {pendingRequests.length === 0 ? (
+          <div className="py-6 text-center text-xs text-[#596B69] space-y-1">
+            <Radio className="w-6 h-6 text-[#889B99] mx-auto animate-pulse" />
+            <p>No pending emergency cases. Hospital intake on standby.</p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {pendingRequests.map((req) => (
+              <div
+                key={req.id}
+                className={`p-4 rounded-xl border flex flex-col md:flex-row items-start md:items-center justify-between gap-4 ${
+                  req.role === RequestRole.MAIN
+                    ? 'bg-[#EAF5F2] border-[#176B68]'
+                    : 'bg-[#F6F8F8] border-[#DCE5E3]'
+                }`}
+              >
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${
+                        req.role === RequestRole.MAIN
+                          ? 'bg-[#174C49] text-white'
+                          : 'bg-white text-[#596B69] border border-[#DCE5E3]'
                       }`}
                     >
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs font-bold text-white">{alloc.resourceType}</span>
-                          <span className="text-[11px] font-mono text-slate-400">
-                            Case: {alloc.caseId}
-                          </span>
-                        </div>
+                      {req.role === RequestRole.MAIN ? 'PRIMARY TARGET (A)' : 'STANDBY NOTICE (B/C)'}
+                    </span>
+                    <span className="text-xs font-mono font-bold text-[#172B2A]">
+                      Case: {req.caseId}
+                    </span>
+                  </div>
+                  <p className="text-xs text-[#596B69]">
+                    Destination Gen: #{req.destinationGeneration} • Expires: {new Date(req.expiresAt).toLocaleTimeString()}
+                  </p>
+                </div>
 
-                        {/* State Badge */}
-                        <div>
-                          {isReserved && (
-                            <span className="px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[10px] font-bold">
-                              RESERVED
-                            </span>
-                          )}
-                          {isInUse && (
-                            <span className="px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-300 border border-blue-500/40 text-[10px] font-bold">
-                              IN ACTIVE USE
-                            </span>
-                          )}
-                          {isReleased && (
-                            <span className="px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 text-[10px] font-bold">
-                              RELEASED
-                            </span>
-                          )}
-                        </div>
-                      </div>
+                <div className="flex items-center gap-2">
+                  {req.role === RequestRole.MAIN && (
+                    <button
+                      onClick={() => handleAcceptRequest(req.id)}
+                      className="px-4 py-2 bg-[#174C49] hover:bg-[#135552] text-white text-xs font-semibold rounded-xl shadow-xs transition flex items-center gap-1.5"
+                    >
+                      <Check className="w-4 h-4" />
+                      Accept & Reserve Equipment
+                    </button>
+                  )}
+                  <button
+                    onClick={() => handleDeclineRequest(req.id)}
+                    className="px-3 py-2 bg-white hover:bg-[#FDF2F2] text-[#B42318] border border-[#DCE5E3] text-xs font-semibold rounded-xl transition flex items-center gap-1.5"
+                  >
+                    <XCircle className="w-4 h-4" />
+                    Decline / Divert
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
 
-                      <div className="flex items-center justify-between text-[11px] text-slate-400 pt-1 border-t border-slate-900">
-                        <span>
-                          Quantity: <strong>{alloc.quantity} unit</strong>
+      {/* 2. Live Hospital Resource Inventory Table */}
+      <div className="bg-white border border-[#DCE5E3] rounded-2xl p-5 space-y-4 shadow-xs">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 border-b border-[#DCE5E3] pb-3">
+          <div>
+            <h2 className="text-base font-bold text-[#172B2A] flex items-center gap-2">
+              <Layers className="w-5 h-5 text-[#176B68]" />
+              Live Hospital Resource Inventory
+            </h2>
+            <p className="text-xs text-[#596B69] mt-0.5">
+              Available count computed server-side via invariant formula:
+            </p>
+          </div>
+          <div className="px-3 py-1 bg-[#F6F8F8] border border-[#DCE5E3] rounded-xl font-mono text-[11px] text-[#174C49] font-bold">
+            Available = Total - OOS - Ext - Reserved - InUse
+          </div>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs">
+            <thead className="bg-[#F6F8F8] border-b border-[#DCE5E3] text-[#596B69] uppercase font-semibold text-[11px]">
+              <tr>
+                <th className="py-2.5 px-3">Resource Type</th>
+                <th className="py-2.5 px-3 text-center">Total</th>
+                <th className="py-2.5 px-3 text-center">Out of Service</th>
+                <th className="py-2.5 px-3 text-center">External In-Use</th>
+                <th className="py-2.5 px-3 text-center">Reserved</th>
+                <th className="py-2.5 px-3 text-center">In Use</th>
+                <th className="py-2.5 px-3 text-center font-bold text-[#174C49]">Available</th>
+                <th className="py-2.5 px-3 text-right">Action</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-[#DCE5E3]">
+              {resourcePools.map((pool) => (
+                <tr key={pool.id} className="hover:bg-[#F6F8F8] transition-colors">
+                  <td className="py-3 px-3 font-semibold text-[#172B2A]">{pool.resourceType}</td>
+                  <td className="py-3 px-3 text-center font-mono text-[#596B69]">{pool.totalCount}</td>
+                  <td className="py-3 px-3 text-center font-mono text-[#B42318]">{pool.outOfServiceCount}</td>
+                  <td className="py-3 px-3 text-center font-mono text-[#8A5800]">{pool.externalOccupancy}</td>
+                  <td className="py-3 px-3 text-center font-mono font-bold text-[#176B68]">{pool.reservedCount}</td>
+                  <td className="py-3 px-3 text-center font-mono text-[#596B69]">{pool.inUseCount}</td>
+                  <td className="py-3 px-3 text-center font-mono font-bold text-sm text-[#237048]">
+                    {pool.availableCount} Available
+                  </td>
+                  <td className="py-3 px-3 text-right">
+                    <button
+                      onClick={() => openEditModal(pool)}
+                      title="Edit capacity numbers"
+                      className="px-2.5 py-1 bg-white border border-[#DCE5E3] hover:bg-[#EAF5F2] text-[#176B68] rounded-lg font-semibold text-xs transition"
+                    >
+                      Update
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* 3. Active Case Equipment Allocations Table (Arrival & Release) */}
+      <div className="bg-white border border-[#DCE5E3] rounded-2xl p-5 space-y-4 shadow-xs">
+        <div className="flex items-center justify-between border-b border-[#DCE5E3] pb-3">
+          <div className="flex items-center gap-2">
+            <ShieldCheck className="w-5 h-5 text-[#176B68]" />
+            <h2 className="text-base font-bold text-[#172B2A]">
+              Active Case Equipment Allocations ({allocations.filter((a) => a.state !== AllocationState.RELEASED).length} Active)
+            </h2>
+          </div>
+          <span className="text-[11px] text-[#596B69]">
+            Arrival moves items to IN_USE; explicit hospital release restores capacity
+          </span>
+        </div>
+
+        {allocations.filter((a) => a.state !== AllocationState.RELEASED).length === 0 ? (
+          <div className="py-6 text-center text-xs text-[#596B69]">
+            No equipment currently reserved or in-use by inbound emergency cases.
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead className="bg-[#F6F8F8] border-b border-[#DCE5E3] text-[#596B69] uppercase font-semibold text-[11px]">
+                <tr>
+                  <th className="py-2.5 px-3">Case ID</th>
+                  <th className="py-2.5 px-3">Resource</th>
+                  <th className="py-2.5 px-3 text-center">Quantity</th>
+                  <th className="py-2.5 px-3 text-center">Lifecycle State</th>
+                  <th className="py-2.5 px-3 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#DCE5E3]">
+                {allocations
+                  .filter((a) => a.state !== AllocationState.RELEASED)
+                  .map((alloc) => (
+                    <tr key={alloc.id} className="hover:bg-[#F6F8F8]">
+                      <td className="py-3 px-3 font-mono font-bold text-[#172B2A]">{alloc.caseId}</td>
+                      <td className="py-3 px-3 font-semibold text-[#174C49]">{alloc.resourceType}</td>
+                      <td className="py-3 px-3 text-center font-mono font-bold">{alloc.quantity}</td>
+                      <td className="py-3 px-3 text-center">
+                        <span
+                          className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${
+                            alloc.state === AllocationState.RESERVED
+                              ? 'bg-[#EAF5F2] text-[#176B68] border border-[#DCE5E3]'
+                              : 'bg-[#FFF8E6] text-[#8A5800] border border-[#F3E5AB]'
+                          }`}
+                        >
+                          {alloc.state}
                         </span>
-                        <span className="font-mono text-slate-500">
-                          Reserved: {new Date(alloc.reservedAt).toLocaleTimeString()}
-                        </span>
-                      </div>
-
-                      {/* Action buttons */}
-                      <div className="flex gap-2 pt-1">
-                        {isReserved && (
+                      </td>
+                      <td className="py-3 px-3 text-right space-x-2">
+                        {alloc.state === AllocationState.RESERVED && (
                           <button
-                            onClick={() => handleStartUse(alloc.id, alloc.version)}
-                            className="flex-1 py-1 px-3 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-semibold shadow-md shadow-blue-600/20 transition"
+                            onClick={() => handleStartUse(alloc.id)}
+                            className="px-2.5 py-1 bg-[#174C49] hover:bg-[#135552] text-white rounded-lg font-semibold text-xs transition"
                           >
                             Start In-Use
                           </button>
                         )}
-                        {!isReleased && (
-                          <button
-                            onClick={() => handleRelease(alloc.id, alloc.version)}
-                            className="py-1 px-3 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs font-medium border border-slate-700 transition"
-                          >
-                            Release Resource
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })
-              )}
-            </div>
+                        <button
+                          onClick={() => handleRelease(alloc.id)}
+                          className="px-2.5 py-1 bg-white border border-[#DCE5E3] hover:bg-[#EAF5F2] text-[#237048] rounded-lg font-semibold text-xs transition"
+                        >
+                          Release Equipment
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+              </tbody>
+            </table>
           </div>
+        )}
+      </div>
+
+      {/* 4. Specialty Staff Readiness */}
+      <div className="bg-white border border-[#DCE5E3] rounded-2xl p-5 space-y-4 shadow-xs">
+        <div className="flex items-center justify-between border-b border-[#DCE5E3] pb-3">
+          <div className="flex items-center gap-2">
+            <Users className="w-5 h-5 text-[#176B68]" />
+            <h2 className="text-base font-bold text-[#172B2A]">
+              Specialist Surgical & Medical Teams Readiness
+            </h2>
+          </div>
+          <span className="text-[11px] text-[#596B69]">
+            Verified on-duty teams for trauma, neuro, and catheterization intake
+          </span>
         </div>
 
-        {/* Staff Readiness & Invariant Guard (1 Col) */}
-        <div className="space-y-4">
-          {/* Incoming Dispatch Requests Queue */}
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <h2 className="text-base font-bold text-white flex items-center gap-2">
-                <Bell className="w-5 h-5 text-red-400" />
-                Incoming Case Requests
-              </h2>
-              <span className="text-xs px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 font-mono font-bold">
-                {requests.length} Total
-              </span>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          {staffList.map((staff) => (
+            <div
+              key={staff.id}
+              className="p-3.5 bg-[#F6F8F8] border border-[#DCE5E3] rounded-xl flex items-center justify-between"
+            >
+              <div>
+                <span className="text-xs font-bold text-[#172B2A] block">{staff.specialty}</span>
+                <span className="text-[11px] text-[#596B69]">
+                  <strong className="text-[#174C49] font-mono">{staff.availableTeamSlots} Team(s) Ready</strong>
+                </span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <button
+                  onClick={() => handleStaffSlotChange(staff, -1)}
+                  disabled={staff.availableTeamSlots <= 0}
+                  className="w-7 h-7 bg-white hover:bg-[#EAF5F2] text-[#172B2A] border border-[#DCE5E3] rounded-lg font-bold text-xs disabled:opacity-40"
+                >
+                  -
+                </button>
+                <button
+                  onClick={() => handleStaffSlotChange(staff, 1)}
+                  className="w-7 h-7 bg-white hover:bg-[#EAF5F2] text-[#172B2A] border border-[#DCE5E3] rounded-lg font-bold text-xs"
+                >
+                  +
+                </button>
+              </div>
             </div>
-
-            <div className="space-y-3">
-              {requests.length === 0 ? (
-                <div className="text-xs text-slate-500 py-4 text-center">
-                  No active ambulance requests for this facility.
-                </div>
-              ) : (
-                requests.map((req) => {
-                  const isMain = req.role === RequestRole.MAIN;
-                  const isPending = req.status === RequestStatus.PENDING;
-                  const isAccepted = req.status === RequestStatus.ACCEPTED;
-                  const isDeclined = req.status === RequestStatus.DECLINED;
-
-                  return (
-                    <div
-                      key={req.id}
-                      className={`p-4 rounded-xl border space-y-3 transition ${
-                        isMain
-                          ? 'bg-red-950/20 border-red-500/30 shadow-lg shadow-red-500/5'
-                          : 'bg-amber-950/15 border-amber-500/25'
-                      }`}
-                    >
-                      <div className="flex items-start justify-between gap-2">
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <span
-                              className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded ${
-                                isMain
-                                  ? 'bg-red-500 text-white'
-                                  : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
-                              }`}
-                            >
-                              {isMain ? 'Target: Full-Care (A)' : 'Standby Notice (B/C)'}
-                            </span>
-                            <span className="text-xs font-mono text-slate-400">
-                              Gen {req.destinationGeneration}
-                            </span>
-                          </div>
-                          <div className="mt-1.5 text-xs text-slate-300">
-                            Case:{' '}
-                            <strong className="text-white font-mono">{req.caseId}</strong>
-                          </div>
-                        </div>
-
-                        {/* Status Badge */}
-                        <div>
-                          {isPending && (
-                            <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[11px] font-bold animate-pulse">
-                              <Radio className="w-3 h-3 text-amber-400" />
-                              Pending Action
-                            </span>
-                          )}
-                          {isAccepted && (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[11px] font-bold">
-                              <CheckCircle2 className="w-3 h-3" />
-                              Accepted
-                            </span>
-                          )}
-                          {isDeclined && (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 text-[11px] font-bold">
-                              <XCircle className="w-3 h-3" />
-                              Declined
-                            </span>
-                          )}
-                        </div>
-                      </div>
-
-                      <div className="text-[11px] text-slate-400 flex justify-between items-center pt-1 border-t border-slate-800/60">
-                        <span>
-                          {isMain
-                            ? 'Accepting atomically reserves required pools & staff slots.'
-                            : 'Standby acknowledgment does not lock equipment.'}
-                        </span>
-                        <span className="font-mono text-slate-500">
-                          {new Date(req.createdAt).toLocaleTimeString()}
-                        </span>
-                      </div>
-
-                      {/* Action Buttons for Pending */}
-                      {isPending && (
-                        <div className="flex gap-2 pt-1">
-                          <button
-                            onClick={() => handleAcceptRequest(req.id)}
-                            className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-semibold shadow-md transition flex items-center justify-center gap-1.5 ${
-                              isMain
-                                ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-600/20'
-                                : 'bg-amber-600 hover:bg-amber-500 text-white shadow-amber-600/20'
-                            }`}
-                          >
-                            <Check className="w-3.5 h-3.5" />
-                            {isMain ? 'Accept & Reserve' : 'Acknowledge Standby'}
-                          </button>
-                          <button
-                            onClick={() => handleDeclineRequest(req.id)}
-                            className="py-1.5 px-3 bg-slate-800 hover:bg-rose-950/60 text-slate-300 hover:text-rose-300 border border-slate-700 hover:border-rose-800/60 rounded-lg text-xs font-medium transition"
-                          >
-                            Decline
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })
-              )}
-            </div>
-          </div>
-
-          {/* Staff Readiness Box */}
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <h2 className="text-base font-bold text-white flex items-center gap-2">
-                <Users className="w-5 h-5 text-emerald-400" />
-                Staff Specialty Teams
-              </h2>
-              <span className="text-xs text-slate-500">Live Slots</span>
-            </div>
-
-            <div className="space-y-3">
-              {staffList.length === 0 ? (
-                <div className="text-xs text-slate-500 py-3 text-center">No specialized team slots assigned.</div>
-              ) : (
-                staffList.map((staff) => (
-                  <div key={staff.id} className="p-3 bg-slate-950 rounded-xl border border-slate-850 space-y-2">
-                    <div className="flex justify-between items-center">
-                      <span className="text-xs font-semibold text-slate-200">{staff.specialty}</span>
-                      <span className="font-mono text-xs font-bold text-emerald-400">
-                        {staff.availableTeamSlots} Team(s) Ready
-                      </span>
-                    </div>
-
-                    <div className="flex justify-between items-center text-[11px] text-slate-400">
-                      <span>Ready At: Now</span>
-                      <div className="flex gap-1">
-                        <button
-                          onClick={() => handleStaffSlotChange(staff, -1)}
-                          disabled={staff.availableTeamSlots <= 0}
-                          className="px-2 py-0.5 bg-slate-900 hover:bg-slate-800 text-slate-300 rounded font-mono font-bold disabled:opacity-40"
-                        >
-                          -1
-                        </button>
-                        <button
-                          onClick={() => handleStaffSlotChange(staff, 1)}
-                          className="px-2 py-0.5 bg-slate-900 hover:bg-slate-800 text-slate-300 rounded font-mono font-bold"
-                        >
-                          +1
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-
-          {/* GoldenHour Resource Invariants Reference */}
-          <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-5 space-y-3 text-xs text-slate-400">
-            <div className="flex items-center gap-2 text-slate-200 font-semibold">
-              <ShieldAlert className="w-4 h-4 text-amber-400" />
-              Resource Allocation Rules
-            </div>
-            <ul className="space-y-1.5 list-disc pl-4 text-[11px] leading-relaxed">
-              <li>Staff update actual capacity & external occupancy; backend maintains reservations & availability.</li>
-              <li>A single ventilator cannot be allocated to two cases simultaneously.</li>
-              <li>Reductions in total capacity cannot breach current committed allocations.</li>
-              <li>Arrival or handover does not automatically release equipment; release is an explicit action.</li>
-            </ul>
-          </div>
+          ))}
         </div>
       </div>
 
-      {/* Edit Pool Modal */}
+      {/* Edit Resource Pool Modal */}
       {editingPool && (
-        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4 animate-scaleUp">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <div className="flex items-center gap-2">
-                <Sliders className="w-4 h-4 text-blue-400" />
-                <h3 className="font-bold text-white text-base">Edit {editingPool.resourceType} Capacity</h3>
+        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white border border-[#DCE5E3] rounded-2xl max-w-md w-full p-6 space-y-4 shadow-xl">
+            <div className="flex items-center justify-between border-b border-[#DCE5E3] pb-3">
+              <div>
+                <h3 className="font-bold text-base text-[#172B2A]">
+                  Edit {editingPool.resourceType} Capacity
+                </h3>
+                <p className="text-xs text-[#596B69]">Manage physical equipment counts and occupancy</p>
               </div>
-              <button onClick={() => setEditingPool(null)} className="text-slate-400 hover:text-white">
-                <X className="w-4 h-4" />
+              <button onClick={closeEditModal} className="text-[#596B69] hover:text-[#172B2A]">
+                <X className="w-5 h-5" />
               </button>
             </div>
 
             {editError && (
-              <div className="p-3 bg-rose-500/10 border border-rose-500/30 rounded-xl text-xs text-rose-300 flex items-center gap-2">
-                <AlertTriangle className="w-4 h-4 text-rose-400 flex-shrink-0" />
+              <div className="p-3 bg-[#FDF2F2] border border-[#F8D7DA] text-[#B42318] rounded-xl text-xs flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 shrink-0" />
                 <span>{editError}</span>
               </div>
             )}
 
-            <form onSubmit={handleSavePool} className="space-y-4">
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-slate-300">Total Count (Physical Units)</label>
+            <form onSubmit={handleSavePool} className="space-y-3 text-xs">
+              <div>
+                <label className="font-semibold text-[#172B2A]">Total Inventory Count</label>
                 <input
                   type="number"
                   min="0"
                   value={editTotal}
                   onChange={(e) => setEditTotal(parseInt(e.target.value, 10) || 0)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500"
+                  className="w-full mt-1 bg-white border border-[#DCE5E3] rounded-xl px-3 py-2 text-[#172B2A] focus:outline-none focus:ring-1 focus:ring-[#176B68]"
                   required
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-slate-300">Out of Service</label>
-                  <input
-                    type="number"
-                    min="0"
-                    value={editOutOfService}
-                    onChange={(e) => setEditOutOfService(parseInt(e.target.value, 10) || 0)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500"
-                    required
-                  />
-                </div>
-
-                <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-slate-300">External Occupancy</label>
-                  <input
-                    type="number"
-                    min="0"
-                    value={editExternal}
-                    onChange={(e) => setEditExternal(parseInt(e.target.value, 10) || 0)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500"
-                    required
-                  />
-                </div>
+              <div>
+                <label className="font-semibold text-[#172B2A]">Out of Service (Maintenance / Repair)</label>
+                <input
+                  type="number"
+                  min="0"
+                  value={editOutOfService}
+                  onChange={(e) => setEditOutOfService(parseInt(e.target.value, 10) || 0)}
+                  className="w-full mt-1 bg-white border border-[#DCE5E3] rounded-xl px-3 py-2 text-[#172B2A] focus:outline-none focus:ring-1 focus:ring-[#176B68]"
+                  required
+                />
               </div>
 
-              {/* Computed Preview */}
-              <div className="p-3 bg-slate-950 rounded-xl border border-slate-850 space-y-1 text-xs font-mono">
-                <div className="flex justify-between text-slate-400">
-                  <span>GoldenHour Committed (Reserved + InUse):</span>
-                  <span className="text-slate-200">{editingPool.reservedCount + editingPool.inUseCount}</span>
+              <div>
+                <label className="font-semibold text-[#172B2A]">External Patients In-Use (Non-Emergency)</label>
+                <input
+                  type="number"
+                  min="0"
+                  value={editExternal}
+                  onChange={(e) => setEditExternal(parseInt(e.target.value, 10) || 0)}
+                  className="w-full mt-1 bg-white border border-[#DCE5E3] rounded-xl px-3 py-2 text-[#172B2A] focus:outline-none focus:ring-1 focus:ring-[#176B68]"
+                  required
+                />
+              </div>
+
+              <div className="p-3 bg-[#F6F8F8] border border-[#DCE5E3] rounded-xl space-y-1 text-[11px] text-[#596B69]">
+                <div className="flex justify-between">
+                  <span>Current Reserved:</span>
+                  <span className="font-bold text-[#176B68] font-mono">{editingPool.reservedCount}</span>
                 </div>
-                <div className="flex justify-between text-slate-400">
-                  <span>Total Committed:</span>
-                  <span className="text-slate-200">
-                    {editOutOfService + editExternal + editingPool.reservedCount + editingPool.inUseCount}
-                  </span>
+                <div className="flex justify-between">
+                  <span>Current In-Use:</span>
+                  <span className="font-bold text-[#172B2A] font-mono">{editingPool.inUseCount}</span>
                 </div>
-                <div className="flex justify-between pt-1 border-t border-slate-800 font-bold">
-                  <span className="text-slate-300">Projected Available:</span>
-                  <span
-                    className={
-                      editTotal - (editOutOfService + editExternal + editingPool.reservedCount + editingPool.inUseCount) >= 0
-                        ? 'text-emerald-400'
-                        : 'text-rose-400'
-                    }
-                  >
-                    {editTotal - (editOutOfService + editExternal + editingPool.reservedCount + editingPool.inUseCount)}
+                <div className="flex justify-between pt-1 border-t border-[#DCE5E3] font-bold text-[#237048]">
+                  <span>Projected Available:</span>
+                  <span className="font-mono">
+                    {Math.max(
+                      0,
+                      (Number(editTotal) || 0) -
+                        (Number(editOutOfService) || 0) -
+                        (Number(editExternal) || 0) -
+                        (Number(editingPool.reservedCount) || 0) -
+                        (Number(editingPool.inUseCount) || 0)
+                    )}
                   </span>
                 </div>
               </div>
 
-              <div className="flex justify-end gap-2 pt-2">
+              <div className="flex gap-2 pt-2">
                 <button
                   type="button"
-                  onClick={() => setEditingPool(null)}
-                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-medium"
+                  onClick={closeEditModal}
+                  className="flex-1 py-2 rounded-xl bg-white border border-[#DCE5E3] text-[#596B69] font-semibold hover:bg-[#F6F8F8]"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={editSaving}
-                  className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-semibold shadow-lg shadow-blue-600/20 disabled:opacity-50"
+                  className="flex-1 py-2 rounded-xl bg-[#174C49] hover:bg-[#135552] text-white font-semibold shadow-xs"
                 >
                   {editSaving ? 'Saving...' : 'Save Changes'}
                 </button>

@@ -49,7 +49,7 @@ export function runAgent3(
     careStartSeconds: number;
     timeToCareSeconds: number;
     reasons: string[];
-    routingSource: 'SIMULATED_GRAPH' | 'LIVE_OSRM' | 'FALLBACK_GRAPH';
+    routingSource: 'SIMULATED_GRAPH' | 'GOOGLE_ROUTES' | 'LIVE_OSRM' | 'FALLBACK_GRAPH';
   }[] = [];
 
   for (const item of evaluations) {
@@ -57,7 +57,7 @@ export function runAgent3(
     const toNodeId = HOSPITAL_NODE_MAP[hosp.id] || 'node-hosp-a';
 
     let travelSeconds = 9999;
-    let routingSource: 'SIMULATED_GRAPH' | 'LIVE_OSRM' | 'FALLBACK_GRAPH' = 'SIMULATED_GRAPH';
+    let routingSource: 'SIMULATED_GRAPH' | 'GOOGLE_ROUTES' | 'LIVE_OSRM' | 'FALLBACK_GRAPH' = 'SIMULATED_GRAPH';
     try {
       const route = routing.calculateRoute(fromNode.id, toNodeId, trafficOverrides);
       travelSeconds = route.travelSeconds;

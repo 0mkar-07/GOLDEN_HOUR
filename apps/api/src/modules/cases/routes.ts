@@ -3,6 +3,7 @@ import {
   CreateCaseRequestSchema,
   SubmitAssessmentRequestSchema,
   ConfirmRequirementsRequestSchema,
+  SubmitDevicePositionSchema,
   RecommendationDto,
 } from '@goldenhour/contracts';
 import { store } from '../../db/store.js';
@@ -11,7 +12,8 @@ import { runAgent1, runAgent1Async } from '../agents/agent1.js';
 import { callGeminiCoordinatorBriefing } from '../agents/gemini.js';
 import { runAgent2 } from '../agents/agent2.js';
 import { runAgent3 } from '../agents/agent3.js';
-import { routingProvider } from '../routing/index.js';
+import { routingProvider, geographicRoutingProvider } from '../routing/index.js';
+import { getIO } from '../realtime/index.js';
 import { SEEDED_ROAD_GRAPH } from '@goldenhour/scenario-fixtures';
 
 interface IdParams {
@@ -299,6 +301,96 @@ export async function registerCaseRoutes(fastify: FastifyInstance) {
         graph: SEEDED_ROAD_GRAPH,
         trafficOverrides: store.trafficOverrides,
         ambulancePosition: store.ambulancePosition,
+      });
+    }
+  );
+
+  // 9. Get Case Geographic Routes (Google Routes / Simulated Road Geometry)
+  fastify.get<{ Params: IdParams }>(
+    '/api/v1/cases/:id/routes',
+    { preHandler: [requireAuth] },
+    async (req, reply: FastifyReply) => {
+      const emergencyCase = store.getCase(req.params.id);
+      if (!emergencyCase) {
+        return reply.status(404).send({
+          code: 'CASE_NOT_FOUND',
+          message: `Case ${req.params.id} does not exist`,
+        });
+      }
+
+      const recommendation = store.getRecommendation(req.params.id);
+      const hospitals = store.listHospitals();
+      const currentPos = store.ambulancePosition;
+
+      // Determine destinations to calculate routes for
+      const targetHospitals = [];
+      if (recommendation?.hospitalA) {
+        const h = hospitals.find((h) => h.id === recommendation.hospitalA!.hospitalId);
+        if (h) targetHospitals.push(h);
+      }
+      if (recommendation?.hospitalB) {
+        const h = hospitals.find((h) => h.id === recommendation.hospitalB!.hospitalId);
+        if (h && !targetHospitals.some((t) => t.id === h.id)) targetHospitals.push(h);
+      }
+      if (recommendation?.hospitalC) {
+        const h = hospitals.find((h) => h.id === recommendation.hospitalC!.hospitalId);
+        if (h && !targetHospitals.some((t) => t.id === h.id)) targetHospitals.push(h);
+      }
+      if (targetHospitals.length === 0) {
+        targetHospitals.push(...hospitals.slice(0, 3));
+      }
+
+      const routeResults: Record<string, any> = {};
+      for (const target of targetHospitals) {
+        const route = await geographicRoutingProvider.calculateGeographicRoute(
+          { lat: currentPos.lat, lng: currentPos.lng },
+          { hospitalId: target.id, hospitalName: target.name, lat: target.location.lat, lng: target.location.lng },
+          store.trafficOverrides
+        );
+        routeResults[target.id] = route;
+      }
+
+      return reply.status(200).send({
+        caseId: req.params.id,
+        positionSequence: currentPos.serverSequence,
+        routes: routeResults,
+        generatedAt: new Date().toISOString(),
+      });
+    }
+  );
+
+  // 10. Ingest Ambulance Position (Device GPS or Field Telemetry)
+  fastify.post<{ Params: IdParams }>(
+    '/api/v1/ambulances/:id/position',
+    { preHandler: [requireAuth] },
+    async (req, reply: FastifyReply) => {
+      const parseResult = SubmitDevicePositionSchema.safeParse(req.body);
+      if (!parseResult.success) {
+        return reply.status(400).send({
+          code: 'VALIDATION_ERROR',
+          message: 'Invalid ambulance position payload',
+          details: parseResult.error.format(),
+        });
+      }
+
+      const { lat, lng, speed, heading, accuracyMeters } = parseResult.data;
+      const updatedPosition = store.submitDevicePosition(
+        lat,
+        lng,
+        speed || 0,
+        heading || 0,
+        accuracyMeters
+      );
+
+      const io = getIO();
+      if (io) {
+        io.to('ambulance:cases').emit('ambulance.position.updated', updatedPosition);
+        io.to('admin').emit('ambulance.position.updated', updatedPosition);
+      }
+
+      return reply.status(200).send({
+        success: true,
+        position: updatedPosition,
       });
     }
   );

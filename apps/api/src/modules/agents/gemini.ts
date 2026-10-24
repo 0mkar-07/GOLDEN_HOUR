@@ -51,7 +51,7 @@ Available standard capability tags:
 Critical Rules:
 1. EXPLICIT UNKNOWNS: Examine the vitals object. If any vital sign (heartRate, systolicBp, diastolicBp, respiratoryRate, oxygenSaturation, gcs) is null, undefined, or missing, YOU MUST add an explicit message to "missingInputs" (e.g. "Glasgow Coma Scale (GCS) unknown or not recorded."). NEVER assume missing values are normal!
 2. AIRWAY & VENTILATION: If GCS <= 8 or SpO2 < 92%, you MUST include "VENTILATORS" in proposedFullCareNeeds and explain the rationale in "reasons".
-3. POLYTRAMA / TBI: If symptoms suggest traumatic brain injury, skull fracture, or major vehicular collision, mandate "TRAUMA_L1", "NEUROSURGERY", "CT_SCAN", "ICU", and "VENTILATORS".
+3. POLYTRAMA / TBI: If symptoms suggest traumatic brain injury, skull fracture, or major vehicular collision, mandate "TRAUMA_L1", "NEUROSURGERY", "CT_SCAN", "ICU", and "VENTILATORS" in proposedFullCareNeeds, and mandate "STABILIZATION", "BASIC_OXYGEN", and "CT_SCAN" in proposedStabilizationNeeds.
 4. STEMI / CARDIAC: If symptoms suggest acute STEMI or severe myocardial infarction, mandate "CARDIAC_CATH", "ICU", and "VENTILATORS".
 5. Do NOT include markdown blocks or backticks. Return raw JSON.
 `;

@@ -56,13 +56,26 @@ class GoldenHourDatabaseStore {
   public hospitalRequests: Map<string, HospitalRequestDto> = new Map();
   public recommendations: Map<string, RecommendationDto> = new Map();
   public trafficOverrides: Record<string, number> = {};
-  public ambulancePosition = {
+  public ambulancePosition: {
+    x: number;
+    y: number;
+    lat: number;
+    lng: number;
+    speed: number;
+    heading: number;
+    accuracyMeters?: number;
+    source: 'SIMULATED' | 'DEVICE_GPS';
+    serverSequence: number;
+    observedAt: string;
+  } = {
     x: 120,
     y: 150,
     lat: 40.71,
     lng: -74.02,
     speed: 0,
     heading: 85,
+    accuracyMeters: 5,
+    source: 'SIMULATED',
     serverSequence: 1,
     observedAt: new Date().toISOString(),
   };
@@ -414,8 +427,35 @@ class GoldenHourDatabaseStore {
       lng,
       speed: 45,
       heading: this.ambulancePosition.heading,
+      accuracyMeters: 5,
+      source: 'SIMULATED',
       serverSequence: this.ambulancePosition.serverSequence + 1,
       observedAt: new Date().toISOString(),
+    };
+  }
+
+  public submitDevicePosition(
+    lat: number,
+    lng: number,
+    speed: number = 0,
+    heading: number = 0,
+    accuracyMeters?: number
+  ) {
+    this.ambulancePosition = {
+      x: 0,
+      y: 0,
+      lat,
+      lng,
+      speed,
+      heading,
+      accuracyMeters,
+      source: 'DEVICE_GPS',
+      serverSequence: this.ambulancePosition.serverSequence + 1,
+      observedAt: new Date().toISOString(),
+    };
+    return {
+      ambulanceId: 'amb-104',
+      ...this.ambulancePosition,
     };
   }
 
@@ -1399,6 +1439,8 @@ class GoldenHourDatabaseStore {
       lng: -74.02,
       speed: 0,
       heading: 85,
+      accuracyMeters: 5,
+      source: 'SIMULATED',
       serverSequence: 1,
       observedAt: new Date().toISOString(),
     };
