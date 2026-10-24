@@ -1,0 +1,944 @@
+{
+  "dataset_status": "synthetic_demo",
+  "generated_for": "NITK Surathkal 40 km healthcare map",
+  "reference_point": {
+    "name": "NITK Surathkal reference point",
+    "latitude": 13.0108,
+    "longitude": 74.7936,
+    "radius_km": 40,
+    "distance_method": "haversine_straight_line"
+  },
+  "capability_codes": [
+    "TRAUMA_L1",
+    "NEUROSURGERY",
+    "CARDIAC_CATH",
+    "VENTILATORS",
+    "ICU",
+    "CT_SCAN",
+    "STABILIZATION",
+    "BASIC_OXYGEN",
+    "EMERGENCY_DEPT"
+  ],
+  "facilities": [
+    {
+      "facility_id": "NITK_HCC",
+      "name": "NITK Health Care Centre",
+      "facility_type": "campus_health_center",
+      "address": "National Institute of Technology Karnataka, Surathkal",
+      "city": "Mangaluru",
+      "state": "Karnataka",
+      "country": "India",
+      "pincode": "575025",
+      "location": {
+        "latitude": 13.0108,
+        "longitude": 74.7936,
+        "distance_from_nitk_km": 0.0,
+        "coordinate_source": "NITK campus reference point",
+        "coordinate_confidence": "medium"
+      },
+      "data_status": "synthetic_demo",
+      "capabilities": {
+        "TRAUMA_L1": {"available_now": 0, "total": 0},
+        "NEUROSURGERY": {"available_now": 0, "total": 0},
+        "CARDIAC_CATH": {"available_now": 0, "total": 0},
+        "VENTILATORS": {"available_now": 0, "total": 1},
+        "ICU": {"available_now": 0, "total": 0},
+        "CT_SCAN": {"available_now": 0, "total": 0},
+        "STABILIZATION": {"available_now": 1, "total": 1},
+        "BASIC_OXYGEN": {"available_now": 2, "total": 2},
+        "EMERGENCY_DEPT": {"available_now": 1, "total": 1, "is_open_now": true}
+      },
+      "timings": {
+        "emergency_department": "24x7 first aid/stabilization (synthetic)",
+        "opd": "Mon-Sat 09:00-17:00 (synthetic)",
+        "elective_ot": null
+      },
+      "surgical_services": {
+        "elective_surgery_supported": false,
+        "emergency_surgery_supported": false,
+        "operating_theatres_total": 0,
+        "operating_theatres_available_now": 0
+      }
+    },
+    {
+      "facility_id": "SRINIVAS_MUKKA",
+      "name": "Srinivas Institute of Medical Sciences and Research Centre",
+      "facility_type": "medical_college_hospital",
+      "address": "Mukka, Surathkal",
+      "city": "Mangaluru",
+      "state": "Karnataka",
+      "country": "India",
+      "pincode": "574146",
+      "location": {
+        "latitude": 13.020414,
+        "longitude": 74.792066,
+        "distance_from_nitk_km": 1.08,
+        "coordinate_source": "public hospital directory reference",
+        "coordinate_confidence": "medium"
+      },
+      "data_status": "synthetic_demo",
+      "capabilities": {
+        "TRAUMA_L1": {"available_now": 1, "total": 1},
+        "NEUROSURGERY": {"available_now": 1, "total": 2},
+        "CARDIAC_CATH": {"available_now": 1, "total": 1},
+        "VENTILATORS": {"available_now": 6, "total": 10},
+        "ICU": {"available_now": 12, "total": 18},
+        "CT_SCAN": {"available_now": 1, "total": 1},
+        "STABILIZATION": {"available_now": 6, "total": 8},
+        "BASIC_OXYGEN": {"available_now": 30, "total": 40},
+        "EMERGENCY_DEPT": {"available_now": 1, "total": 1, "is_open_now": true}
+      },
+      "timings": {
+        "emergency_department": "24x7 (synthetic)",
+        "opd": "Mon-Sat 09:00-17:00 (synthetic)",
+        "elective_ot": "Mon-Sat 08:00-18:00 (synthetic)"
+      },
+      "surgical_services": {
+        "elective_surgery_supported": true,
+        "emergency_surgery_supported": true,
+        "operating_theatres_total": 4,
+        "operating_theatres_available_now": 2
+      }
+    },
+    {
+      "facility_id": "PADMAVATHI_SURATHKAL",
+      "name": "Padmavathi Hospital",
+      "facility_type": "hospital",
+      "address": "NH66, Surathkal",
+      "city": "Mangaluru",
+      "state": "Karnataka",
+      "country": "India",
+      "pincode": "575002",
+      "location": {
+        "latitude": 12.9916502,
+        "longitude": 74.8004631,
+        "distance_from_nitk_km": 2.26,
+        "coordinate_source": "OpenStreetMap public geocoding reference",
+        "coordinate_confidence": "high"
+      },
+      "data_status": "synthetic_demo",
+      "capabilities": {
+        "TRAUMA_L1": {"available_now": 0, "total": 0},
+        "NEUROSURGERY": {"available_now": 0, "total": 0},
+        "CARDIAC_CATH": {"available_now": 0, "total": 0},
+        "VENTILATORS": {"available_now": 0, "total": 2},
+        "ICU": {"available_now": 2, "total": 4},
+        "CT_SCAN": {"available_now": 0, "total": 0},
+        "STABILIZATION": {"available_now": 2, "total": 3},
+        "BASIC_OXYGEN": {"available_now": 6, "total": 8},
+        "EMERGENCY_DEPT": {"available_now": 1, "total": 1, "is_open_now": true}
+      },
+      "timings": {
+        "emergency_department": "24x7 (synthetic)",
+        "opd": "Mon-Sat 09:00-18:00 (synthetic)",
+        "elective_ot": "Mon-Sat 09:00-16:00 (synthetic)"
+      },
+      "surgical_services": {
+        "elective_surgery_supported": true,
+        "emergency_surgery_supported": true,
+        "operating_theatres_total": 1,
+        "operating_theatres_available_now": 1
+      }
+    },
+    {
+      "facility_id": "CHIRASHREE_SURATHKAL",
+      "name": "Chirashree Nursing Home",
+      "facility_type": "nursing_home",
+      "address": "NH66, Surathkal",
+      "city": "Mangaluru",
+      "state": "Karnataka",
+      "country": "India",
+      "pincode": "575014",
+      "location": {
+        "latitude": 12.9904033,
+        "longitude": 74.7994866,
+        "distance_from_nitk_km": 2.36,
+        "coordinate_source": "OpenStreetMap public geocoding reference",
+        "coordinate_confidence": "high"
+      },
+      "data_status": "synthetic_demo",
+      "capabilities": {
+        "TRAUMA_L1": {"available_now": 0, "total": 0},
+        "NEUROSURGERY": {"available_now": 0, "total": 0},
+        "CARDIAC_CATH": {"available_now": 0, "total": 0},
+        "VENTILATORS": {"available_now": 0, "total": 0},
+        "ICU": {"available_now": 0, "total": 0},
+        "CT_SCAN": {"available_now": 0, "total": 0},
+        "STABILIZATION": {"available_now": 1, "total": 1},
+        "BASIC_OXYGEN": {"available_now": 2, "total": 2},
+        "EMERGENCY_DEPT": {"available_now": 1, "total": 1, "is_open_now": false}
+      },
+      "timings": {
+        "emergency_department": "08:00-20:00 (synthetic)",
+        "opd": "Mon-Sat 09:00-18:00 (synthetic)",
+        "elective_ot": null
+      },
+      "surgical_services": {
+        "elective_surgery_supported": false,
+        "emergency_surgery_supported": false,
+        "operating_theatres_total": 0,
+        "operating_theatres_available_now": 0
+      }
+    },
+    {
+      "facility_id": "AJ_HOSPITAL_MANGALURU",
+      "name": "A.J. Hospital and Research Centre",
+      "facility_type": "hospital",
+      "address": "Kuntikana, Mangaluru",
+      "city": "Mangaluru",
+      "state": "Karnataka",
+      "country": "India",
+      "pincode": "575004",
+      "location": {
+        "latitude": 12.8993853,
+        "longitude": 74.8457204,
+        "distance_from_nitk_km": 13.62,
+        "coordinate_source": "public hospital directory reference",
+        "coordinate_confidence": "medium"
+      },
+      "data_status": "synthetic_demo",
+      "capabilities": {
+        "TRAUMA_L1": {"available_now": 1, "total": 1},
+        "NEUROSURGERY": {"available_now": 1, "total": 2},
+        "CARDIAC_CATH": {"available_now": 1, "total": 1},
+        "VENTILATORS": {"available_now": 8, "total": 12},
+        "ICU": {"available_now": 18, "total": 24},
+        "CT_SCAN": {"available_now": 1, "total": 2},
+        "STABILIZATION": {"available_now": 8, "total": 10},
+        "BASIC_OXYGEN": {"available_now": 40, "total": 50},
+        "EMERGENCY_DEPT": {"available_now": 1, "total": 1, "is_open_now": true}
+      },
+      "timings": {
+        "emergency_department": "24x7 (synthetic)",
+        "opd": "Mon-Sat 09:00-17:00 (synthetic)",
+        "elective_ot": "Mon-Sat 08:00-18:00 (synthetic)"
+      },
+      "surgical_services": {
+        "elective_surgery_supported": true,
+        "emergency_surgery_supported": true,
+        "operating_theatres_total": 6,
+        "operating_theatres_available_now": 3
+      }
+    },
+    {
+      "facility_id": "KMC_ATTAVAR",
+      "name": "University Medical Center (KMC Hospital)",
+      "facility_type": "medical_college_hospital",
+      "address": "Falnir-Jyothi Road, Attavar",
+      "city": "Mangaluru",
+      "state": "Karnataka",
+      "country": "India",
+      "pincode": "575001",
+      "location": {
+        "latitude": 12.8717599,
+        "longitude": 74.8489758,
+        "distance_from_nitk_km": 16.58,
+        "coordinate_source": "OpenStreetMap public geocoding reference",
+        "coordinate_confidence": "high"
+      },
+      "data_status": "synthetic_demo",
+      "capabilities": {
+        "TRAUMA_L1": {"available_now": 1, "total": 1},
+        "NEUROSURGERY": {"available_now": 2, "total": 3},
+        "CARDIAC_CATH": {"available_now": 1, "total": 2},
+        "VENTILATORS": {"available_now": 14, "total": 20},
+        "ICU": {"available_now": 24, "total": 32},
+        "CT_SCAN": {"available_now": 2, "total": 2},
+        "STABILIZATION": {"available_now": 12, "total": 14},
+        "BASIC_OXYGEN": {"available_now": 60, "total": 80},
+        "EMERGENCY_DEPT": {"available_now": 1, "total": 1, "is_open_now": true}
+      },
+      "timings": {
+        "emergency_department": "24x7 (synthetic)",
+        "opd": "Mon-Sat 09:00-17:00 (synthetic)",
+        "elective_ot": "Mon-Sat 08:00-18:00 (synthetic)"
+      },
+      "surgical_services": {
+        "elective_surgery_supported": true,
+        "emergency_surgery_supported": true,
+        "operating_theatres_total": 8,
+        "operating_theatres_available_now": 4
+      }
+    },
+    {
+      "facility_id": "MANGALORE_NURSING_HOME",
+      "name": "Mangalore Nursing Home",
+      "facility_type": "nursing_home",
+      "address": "Kankanady, Mangaluru",
+      "city": "Mangaluru",
+      "state": "Karnataka",
+      "country": "India",
+      "pincode": "575002",
+      "location": {
+        "latitude": 12.8724812,
+        "longitude": 74.8550181,
+        "distance_from_nitk_km": 16.76,
+        "coordinate_source": "public hospital directory reference",
+        "coordinate_confidence": "medium"
+      },
+      "data_status": "synthetic_demo",
+      "capabilities": {
+        "TRAUMA_L1": {"available_now": 0, "total": 0},
+        "NEUROSURGERY": {"available_now": 0, "total": 0},
+        "CARDIAC_CATH": {"available_now": 0, "total": 0},
+        "VENTILATORS": {"available_now": 1, "total": 2},
+        "ICU": {"available_now": 3, "total": 5},
+        "CT_SCAN": {"available_now": 0, "total": 0},
+        "STABILIZATION": {"available_now": 3, "total": 4},
+        "BASIC_OXYGEN": {"available_now": 8, "total": 10},
+        "EMERGENCY_DEPT": {"available_now": 1, "total": 1, "is_open_now": true}
+      },
+      "timings": {
+        "emergency_department": "24x7 (synthetic)",
+        "opd": "Mon-Sat 09:00-17:00 (synthetic)",
+        "elective_ot": "Mon-Sat 09:00-16:00 (synthetic)"
+      },
+      "surgical_services": {
+        "elective_surgery_supported": true,
+        "emergency_surgery_supported": true,
+        "operating_theatres_total": 1,
+        "operating_theatres_available_now": 1
+      }
+    },
+    {
+      "facility_id": "UNITY_HOSPITAL",
+      "name": "Unity Hospital",
+      "facility_type": "hospital",
+      "address": "Mother Teresa Road, Kankanady",
+      "city": "Mangaluru",
+      "state": "Karnataka",
+      "country": "India",
+      "pincode": "575001",
+      "location": {
+        "latitude": 12.8676531,
+        "longitude": 74.8542223,
+        "distance_from_nitk_km": 17.22,
+        "coordinate_source": "OpenStreetMap public geocoding reference",
+        "coordinate_confidence": "high"
+      },
+      "data_status": "synthetic_demo",
+      "capabilities": {
+        "TRAUMA_L1": {"available_now": 1, "total": 1},
+        "NEUROSURGERY": {"available_now": 0, "total": 1},
+        "CARDIAC_CATH": {"available_now": 0, "total": 1},
+        "VENTILATORS": {"available_now": 3, "total": 6},
+        "ICU": {"available_now": 8, "total": 12},
+        "CT_SCAN": {"available_now": 1, "total": 1},
+        "STABILIZATION": {"available_now": 5, "total": 6},
+        "BASIC_OXYGEN": {"available_now": 20, "total": 25},
+        "EMERGENCY_DEPT": {"available_now": 1, "total": 1, "is_open_now": true}
+      },
+      "timings": {
+        "emergency_department": "24x7 (synthetic)",
+        "opd": "Mon-Sat 09:00-17:00 (synthetic)",
+        "elective_ot": "Mon-Sat 08:00-17:00 (synthetic)"
+      },
+      "surgical_services": {
+        "elective_surgery_supported": true,
+        "emergency_surgery_supported": true,
+        "operating_theatres_total": 3,
+        "operating_theatres_available_now": 2
+      }
+    },
+    {
+      "facility_id": "INDIANA_HEART_MANGALURU",
+      "name": "Indiana Hospital and Heart Institute",
+      "facility_type": "hospital",
+      "address": "Marlady Road, Kankanady",
+      "city": "Mangaluru",
+      "state": "Karnataka",
+      "country": "India",
+      "pincode": "575002",
+      "location": {
+        "latitude": 12.8676798,
+        "longitude": 74.8664233,
+        "distance_from_nitk_km": 17.76,
+        "coordinate_source": "OpenStreetMap public geocoding reference",
+        "coordinate_confidence": "high"
+      },
+      "data_status": "synthetic_demo",
+      "capabilities": {
+        "TRAUMA_L1": {"available_now": 1, "total": 1},
+        "NEUROSURGERY": {"available_now": 0, "total": 0},
+        "CARDIAC_CATH": {"available_now": 2, "total": 2},
+        "VENTILATORS": {"available_now": 7, "total": 10},
+        "ICU": {"available_now": 14, "total": 18},
+        "CT_SCAN": {"available_now": 1, "total": 1},
+        "STABILIZATION": {"available_now": 6, "total": 8},
+        "BASIC_OXYGEN": {"available_now": 30, "total": 40},
+        "EMERGENCY_DEPT": {"available_now": 1, "total": 1, "is_open_now": true}
+      },
+      "timings": {
+        "emergency_department": "24x7 (synthetic)",
+        "opd": "Mon-Sat 09:00-17:00 (synthetic)",
+        "elective_ot": "Mon-Sat 08:00-18:00 (synthetic)"
+      },
+      "surgical_services": {
+        "elective_surgery_supported": true,
+        "emergency_surgery_supported": true,
+        "operating_theatres_total": 4,
+        "operating_theatres_available_now": 2
+      }
+    },
+    {
+      "facility_id": "FATHER_MULLER_MANGALURU",
+      "name": "Father Muller Medical College Hospital",
+      "facility_type": "medical_college_hospital",
+      "address": "Kankanady, Mangaluru",
+      "city": "Mangaluru",
+      "state": "Karnataka",
+      "country": "India",
+      "pincode": "575002",
+      "location": {
+        "latitude": 12.86611,
+        "longitude": 74.86194,
+        "distance_from_nitk_km": 17.71,
+        "coordinate_source": "public hospital directory reference",
+        "coordinate_confidence": "medium"
+      },
+      "data_status": "synthetic_demo",
+      "capabilities": {
+        "TRAUMA_L1": {"available_now": 1, "total": 1},
+        "NEUROSURGERY": {"available_now": 1, "total": 2},
+        "CARDIAC_CATH": {"available_now": 1, "total": 1},
+        "VENTILATORS": {"available_now": 10, "total": 14},
+        "ICU": {"available_now": 20, "total": 28},
+        "CT_SCAN": {"available_now": 2, "total": 2},
+        "STABILIZATION": {"available_now": 10, "total": 12},
+        "BASIC_OXYGEN": {"available_now": 50, "total": 65},
+        "EMERGENCY_DEPT": {"available_now": 1, "total": 1, "is_open_now": true}
+      },
+      "timings": {
+        "emergency_department": "24x7 (synthetic)",
+        "opd": "Mon-Sat 09:00-17:00 (synthetic)",
+        "elective_ot": "Mon-Sat 08:00-18:00 (synthetic)"
+      },
+      "surgical_services": {
+        "elective_surgery_supported": true,
+        "emergency_surgery_supported": true,
+        "operating_theatres_total": 7,
+        "operating_theatres_available_now": 4
+      }
+    },
+    {
+      "facility_id": "YENEPOYA_DERALAKATTE",
+      "name": "Yenepoya Medical College Hospital",
+      "facility_type": "medical_college_hospital",
+      "address": "Deralakatte, Mangaluru",
+      "city": "Mangaluru",
+      "state": "Karnataka",
+      "country": "India",
+      "pincode": "575018",
+      "location": {
+        "latitude": 12.8125,
+        "longitude": 74.8807,
+        "distance_from_nitk_km": 23.99,
+        "coordinate_source": "public hospital directory reference",
+        "coordinate_confidence": "medium"
+      },
+      "data_status": "synthetic_demo",
+      "capabilities": {
+        "TRAUMA_L1": {"available_now": 1, "total": 1},
+        "NEUROSURGERY": {"available_now": 2, "total": 2},
+        "CARDIAC_CATH": {"available_now": 1, "total": 1},
+        "VENTILATORS": {"available_now": 12, "total": 16},
+        "ICU": {"available_now": 22, "total": 30},
+        "CT_SCAN": {"available_now": 2, "total": 2},
+        "STABILIZATION": {"available_now": 12, "total": 14},
+        "BASIC_OXYGEN": {"available_now": 55, "total": 70},
+        "EMERGENCY_DEPT": {"available_now": 1, "total": 1, "is_open_now": true}
+      },
+      "timings": {
+        "emergency_department": "24x7 (synthetic)",
+        "opd": "Mon-Sat 09:00-17:00 (synthetic)",
+        "elective_ot": "Mon-Sat 08:00-18:00 (synthetic)"
+      },
+      "surgical_services": {
+        "elective_surgery_supported": true,
+        "emergency_surgery_supported": true,
+        "operating_theatres_total": 8,
+        "operating_theatres_available_now": 4
+      }
+    },
+    {
+      "facility_id": "SURATHKAL_GOVERNMENT_HOSPITAL",
+      "name": "Surathkal Government Hospital",
+      "facility_type": "hospital",
+      "address": "SH101, Krishnapura, Surathkal",
+      "city": "Mangaluru",
+      "state": "Karnataka",
+      "country": "India",
+      "pincode": "575014",
+      "location": {
+        "latitude": 12.9872876,
+        "longitude": 74.8035402,
+        "distance_from_nitk_km": 2.83,
+        "coordinate_source": "OpenStreetMap public geocoding reference",
+        "coordinate_confidence": "high"
+      },
+      "data_status": "synthetic_demo",
+      "capabilities": {
+        "TRAUMA_L1": {"available_now": 0, "total": 0},
+        "NEUROSURGERY": {"available_now": 0, "total": 0},
+        "CARDIAC_CATH": {"available_now": 0, "total": 0},
+        "VENTILATORS": {"available_now": 1, "total": 2},
+        "ICU": {"available_now": 2, "total": 4},
+        "CT_SCAN": {"available_now": 0, "total": 0},
+        "STABILIZATION": {"available_now": 3, "total": 4},
+        "BASIC_OXYGEN": {"available_now": 8, "total": 10},
+        "EMERGENCY_DEPT": {"available_now": 1, "total": 1, "is_open_now": true}
+      },
+      "timings": {
+        "emergency_department": "24x7 (synthetic)",
+        "opd": "Mon-Sat 09:00-17:00 (synthetic)",
+        "elective_ot": null
+      },
+      "surgical_services": {
+        "elective_surgery_supported": false,
+        "emergency_surgery_supported": true,
+        "operating_theatres_total": 0,
+        "operating_theatres_available_now": 0
+      }
+    },
+    {
+      "facility_id": "MISQUITH_RAO_HOSPITAL",
+      "name": "Misquith and Rao's Hospital",
+      "facility_type": "hospital",
+      "address": "SH101, Krishnapura, Surathkal",
+      "city": "Mangaluru",
+      "state": "Karnataka",
+      "country": "India",
+      "pincode": "575014",
+      "location": {
+        "latitude": 12.9836731,
+        "longitude": 74.8125078,
+        "distance_from_nitk_km": 3.65,
+        "coordinate_source": "OpenStreetMap public geocoding reference",
+        "coordinate_confidence": "high"
+      },
+      "data_status": "synthetic_demo",
+      "capabilities": {
+        "TRAUMA_L1": {"available_now": 0, "total": 0},
+        "NEUROSURGERY": {"available_now": 0, "total": 0},
+        "CARDIAC_CATH": {"available_now": 0, "total": 0},
+        "VENTILATORS": {"available_now": 0, "total": 1},
+        "ICU": {"available_now": 1, "total": 2},
+        "CT_SCAN": {"available_now": 0, "total": 0},
+        "STABILIZATION": {"available_now": 1, "total": 2},
+        "BASIC_OXYGEN": {"available_now": 4, "total": 5},
+        "EMERGENCY_DEPT": {"available_now": 1, "total": 1, "is_open_now": false}
+      },
+      "timings": {
+        "emergency_department": "08:00-20:00 (synthetic)",
+        "opd": "Mon-Sat 09:00-18:00 (synthetic)",
+        "elective_ot": "Mon-Sat 09:00-16:00 (synthetic)"
+      },
+      "surgical_services": {
+        "elective_surgery_supported": false,
+        "emergency_surgery_supported": false,
+        "operating_theatres_total": 0,
+        "operating_theatres_available_now": 0
+      }
+    },
+    {
+      "facility_id": "VENUS_HOSPITAL_SURATHKAL",
+      "name": "Venus Hospital",
+      "facility_type": "hospital",
+      "address": "NH66, Surathkal",
+      "city": "Mangaluru",
+      "state": "Karnataka",
+      "country": "India",
+      "pincode": "575014",
+      "location": {
+        "latitude": 12.9880718,
+        "longitude": 74.8016267,
+        "distance_from_nitk_km": 2.67,
+        "coordinate_source": "OpenStreetMap public geocoding reference",
+        "coordinate_confidence": "high"
+      },
+      "data_status": "synthetic_demo",
+      "capabilities": {
+        "TRAUMA_L1": {"available_now": 0, "total": 0},
+        "NEUROSURGERY": {"available_now": 0, "total": 0},
+        "CARDIAC_CATH": {"available_now": 0, "total": 0},
+        "VENTILATORS": {"available_now": 1, "total": 2},
+        "ICU": {"available_now": 1, "total": 3},
+        "CT_SCAN": {"available_now": 0, "total": 0},
+        "STABILIZATION": {"available_now": 2, "total": 3},
+        "BASIC_OXYGEN": {"available_now": 5, "total": 7},
+        "EMERGENCY_DEPT": {"available_now": 1, "total": 1, "is_open_now": true}
+      },
+      "timings": {
+        "emergency_department": "24x7 (synthetic)",
+        "opd": "Mon-Sat 09:00-18:00 (synthetic)",
+        "elective_ot": "Mon-Sat 09:00-16:00 (synthetic)"
+      },
+      "surgical_services": {
+        "elective_surgery_supported": true,
+        "emergency_surgery_supported": true,
+        "operating_theatres_total": 1,
+        "operating_theatres_available_now": 1
+      }
+    },
+    {
+      "facility_id": "GOVT_WENLOCK_MANGALURU",
+      "name": "Government Wenlock Hospital",
+      "facility_type": "hospital",
+      "address": "Old Kent Road, Attavar",
+      "city": "Mangaluru",
+      "state": "Karnataka",
+      "country": "India",
+      "pincode": "575001",
+      "location": {
+        "latitude": 12.8671425,
+        "longitude": 74.8427701,
+        "distance_from_nitk_km": 16.84,
+        "coordinate_source": "OpenStreetMap public geocoding reference",
+        "coordinate_confidence": "high"
+      },
+      "data_status": "synthetic_demo",
+      "capabilities": {
+        "TRAUMA_L1": {"available_now": 1, "total": 1},
+        "NEUROSURGERY": {"available_now": 1, "total": 1},
+        "CARDIAC_CATH": {"available_now": 0, "total": 1},
+        "VENTILATORS": {"available_now": 10, "total": 14},
+        "ICU": {"available_now": 20, "total": 30},
+        "CT_SCAN": {"available_now": 1, "total": 2},
+        "STABILIZATION": {"available_now": 12, "total": 16},
+        "BASIC_OXYGEN": {"available_now": 60, "total": 80},
+        "EMERGENCY_DEPT": {"available_now": 1, "total": 1, "is_open_now": true}
+      },
+      "timings": {
+        "emergency_department": "24x7 (synthetic)",
+        "opd": "Mon-Sat 09:00-17:00 (synthetic)",
+        "elective_ot": "Mon-Sat 08:00-18:00 (synthetic)"
+      },
+      "surgical_services": {
+        "elective_surgery_supported": true,
+        "emergency_surgery_supported": true,
+        "operating_theatres_total": 6,
+        "operating_theatres_available_now": 3
+      }
+    },
+    {
+      "facility_id": "ESI_HOSPITAL_MANGALURU",
+      "name": "ESI Hospital",
+      "facility_type": "hospital",
+      "address": "NH66, Bikarnakatte, Nanthoor",
+      "city": "Mangaluru",
+      "state": "Karnataka",
+      "country": "India",
+      "pincode": "575001",
+      "location": {
+        "latitude": 12.8741281,
+        "longitude": 74.861241,
+        "distance_from_nitk_km": 16.87,
+        "coordinate_source": "OpenStreetMap public geocoding reference",
+        "coordinate_confidence": "high"
+      },
+      "data_status": "synthetic_demo",
+      "capabilities": {
+        "TRAUMA_L1": {"available_now": 0, "total": 0},
+        "NEUROSURGERY": {"available_now": 0, "total": 0},
+        "CARDIAC_CATH": {"available_now": 0, "total": 0},
+        "VENTILATORS": {"available_now": 2, "total": 3},
+        "ICU": {"available_now": 4, "total": 6},
+        "CT_SCAN": {"available_now": 0, "total": 1},
+        "STABILIZATION": {"available_now": 4, "total": 5},
+        "BASIC_OXYGEN": {"available_now": 15, "total": 20},
+        "EMERGENCY_DEPT": {"available_now": 1, "total": 1, "is_open_now": true}
+      },
+      "timings": {
+        "emergency_department": "24x7 (synthetic)",
+        "opd": "Mon-Sat 09:00-17:00 (synthetic)",
+        "elective_ot": "Mon-Sat 09:00-16:00 (synthetic)"
+      },
+      "surgical_services": {
+        "elective_surgery_supported": true,
+        "emergency_surgery_supported": true,
+        "operating_theatres_total": 2,
+        "operating_theatres_available_now": 1
+      }
+    },
+    {
+      "facility_id": "DIDDYS_HOSPITAL_MANGALURU",
+      "name": "Diddy's Hospital",
+      "facility_type": "hospital",
+      "address": "Ambedkar Circle, Attavar",
+      "city": "Mangaluru",
+      "state": "Karnataka",
+      "country": "India",
+      "pincode": "575001",
+      "location": {
+        "latitude": 12.8588591,
+        "longitude": 74.8480016,
+        "distance_from_nitk_km": 17.89,
+        "coordinate_source": "OpenStreetMap public geocoding reference",
+        "coordinate_confidence": "high"
+      },
+      "data_status": "synthetic_demo",
+      "capabilities": {
+        "TRAUMA_L1": {"available_now": 0, "total": 0},
+        "NEUROSURGERY": {"available_now": 0, "total": 0},
+        "CARDIAC_CATH": {"available_now": 0, "total": 0},
+        "VENTILATORS": {"available_now": 1, "total": 2},
+        "ICU": {"available_now": 2, "total": 3},
+        "CT_SCAN": {"available_now": 0, "total": 0},
+        "STABILIZATION": {"available_now": 2, "total": 3},
+        "BASIC_OXYGEN": {"available_now": 6, "total": 8},
+        "EMERGENCY_DEPT": {"available_now": 1, "total": 1, "is_open_now": true}
+      },
+      "timings": {
+        "emergency_department": "24x7 (synthetic)",
+        "opd": "Mon-Sat 09:00-17:00 (synthetic)",
+        "elective_ot": "Mon-Sat 09:00-16:00 (synthetic)"
+      },
+      "surgical_services": {
+        "elective_surgery_supported": true,
+        "emergency_surgery_supported": true,
+        "operating_theatres_total": 1,
+        "operating_theatres_available_now": 1
+      }
+    },
+    {
+      "facility_id": "LADY_GOSHAN_HOSPITAL",
+      "name": "Lady Goshan Hospital",
+      "facility_type": "hospital",
+      "address": "Bibi Alabi Road, Bunder",
+      "city": "Mangaluru",
+      "state": "Karnataka",
+      "country": "India",
+      "pincode": "575001",
+      "location": {
+        "latitude": 12.8650932,
+        "longitude": 74.837966,
+        "distance_from_nitk_km": 16.9,
+        "coordinate_source": "OpenStreetMap public geocoding reference",
+        "coordinate_confidence": "high"
+      },
+      "data_status": "synthetic_demo",
+      "capabilities": {
+        "TRAUMA_L1": {"available_now": 0, "total": 0},
+        "NEUROSURGERY": {"available_now": 0, "total": 0},
+        "CARDIAC_CATH": {"available_now": 0, "total": 0},
+        "VENTILATORS": {"available_now": 0, "total": 1},
+        "ICU": {"available_now": 1, "total": 2},
+        "CT_SCAN": {"available_now": 0, "total": 0},
+        "STABILIZATION": {"available_now": 2, "total": 3},
+        "BASIC_OXYGEN": {"available_now": 5, "total": 7},
+        "EMERGENCY_DEPT": {"available_now": 1, "total": 1, "is_open_now": false}
+      },
+      "timings": {
+        "emergency_department": "08:00-20:00 (synthetic)",
+        "opd": "Mon-Sat 09:00-17:00 (synthetic)",
+        "elective_ot": "Mon-Sat 09:00-16:00 (synthetic)"
+      },
+      "surgical_services": {
+        "elective_surgery_supported": true,
+        "emergency_surgery_supported": false,
+        "operating_theatres_total": 1,
+        "operating_theatres_available_now": 1
+      }
+    },
+    {
+      "facility_id": "RAMA_SAKTI_CHARITABLE_HOSPITAL",
+      "name": "Rama Sakti Mission Charitable Hospital",
+      "facility_type": "hospital",
+      "address": "Saravu House Road, Bikarnakatte, Nanthoor",
+      "city": "Mangaluru",
+      "state": "Karnataka",
+      "country": "India",
+      "pincode": "575001",
+      "location": {
+        "latitude": 12.8958004,
+        "longitude": 74.8735025,
+        "distance_from_nitk_km": 15.44,
+        "coordinate_source": "OpenStreetMap public geocoding reference",
+        "coordinate_confidence": "high"
+      },
+      "data_status": "synthetic_demo",
+      "capabilities": {
+        "TRAUMA_L1": {"available_now": 0, "total": 0},
+        "NEUROSURGERY": {"available_now": 0, "total": 0},
+        "CARDIAC_CATH": {"available_now": 0, "total": 0},
+        "VENTILATORS": {"available_now": 0, "total": 1},
+        "ICU": {"available_now": 1, "total": 2},
+        "CT_SCAN": {"available_now": 0, "total": 0},
+        "STABILIZATION": {"available_now": 2, "total": 3},
+        "BASIC_OXYGEN": {"available_now": 5, "total": 6},
+        "EMERGENCY_DEPT": {"available_now": 1, "total": 1, "is_open_now": true}
+      },
+      "timings": {
+        "emergency_department": "24x7 (synthetic)",
+        "opd": "Mon-Sat 09:00-17:00 (synthetic)",
+        "elective_ot": null
+      },
+      "surgical_services": {
+        "elective_surgery_supported": false,
+        "emergency_surgery_supported": false,
+        "operating_theatres_total": 0,
+        "operating_theatres_available_now": 0
+      }
+    },
+    {
+      "facility_id": "SCS_HOSPITAL_MANGALURU",
+      "name": "SCS Hospital",
+      "facility_type": "hospital",
+      "address": "Balmatta Road, Bendoor",
+      "city": "Mangaluru",
+      "state": "Karnataka",
+      "country": "India",
+      "pincode": "575002",
+      "location": {
+        "latitude": 12.8744738,
+        "longitude": 74.8551095,
+        "distance_from_nitk_km": 16.56,
+        "coordinate_source": "OpenStreetMap public geocoding reference",
+        "coordinate_confidence": "high"
+      },
+      "data_status": "synthetic_demo",
+      "capabilities": {
+        "TRAUMA_L1": {"available_now": 0, "total": 0},
+        "NEUROSURGERY": {"available_now": 0, "total": 0},
+        "CARDIAC_CATH": {"available_now": 0, "total": 1},
+        "VENTILATORS": {"available_now": 2, "total": 4},
+        "ICU": {"available_now": 5, "total": 8},
+        "CT_SCAN": {"available_now": 0, "total": 1},
+        "STABILIZATION": {"available_now": 4, "total": 6},
+        "BASIC_OXYGEN": {"available_now": 15, "total": 20},
+        "EMERGENCY_DEPT": {"available_now": 1, "total": 1, "is_open_now": true}
+      },
+      "timings": {
+        "emergency_department": "24x7 (synthetic)",
+        "opd": "Mon-Sat 09:00-17:00 (synthetic)",
+        "elective_ot": "Mon-Sat 09:00-17:00 (synthetic)"
+      },
+      "surgical_services": {
+        "elective_surgery_supported": true,
+        "emergency_surgery_supported": true,
+        "operating_theatres_total": 2,
+        "operating_theatres_available_now": 1
+      }
+    },
+    {
+      "facility_id": "FIRST_NEURO_HOSPITAL",
+      "name": "First Neuro Hospital",
+      "facility_type": "hospital",
+      "address": "NH73, Bajal",
+      "city": "Mangaluru",
+      "state": "Karnataka",
+      "country": "India",
+      "pincode": "575007",
+      "location": {
+        "latitude": 12.8702743,
+        "longitude": 74.895554,
+        "distance_from_nitk_km": 19.14,
+        "coordinate_source": "OpenStreetMap public geocoding reference",
+        "coordinate_confidence": "high"
+      },
+      "data_status": "synthetic_demo",
+      "capabilities": {
+        "TRAUMA_L1": {"available_now": 1, "total": 1},
+        "NEUROSURGERY": {"available_now": 1, "total": 2},
+        "CARDIAC_CATH": {"available_now": 0, "total": 0},
+        "VENTILATORS": {"available_now": 2, "total": 4},
+        "ICU": {"available_now": 6, "total": 8},
+        "CT_SCAN": {"available_now": 1, "total": 1},
+        "STABILIZATION": {"available_now": 3, "total": 4},
+        "BASIC_OXYGEN": {"available_now": 12, "total": 15},
+        "EMERGENCY_DEPT": {"available_now": 1, "total": 1, "is_open_now": true}
+      },
+      "timings": {
+        "emergency_department": "24x7 (synthetic)",
+        "opd": "Mon-Sat 09:00-17:00 (synthetic)",
+        "elective_ot": "Mon-Sat 08:00-18:00 (synthetic)"
+      },
+      "surgical_services": {
+        "elective_surgery_supported": true,
+        "emergency_surgery_supported": true,
+        "operating_theatres_total": 2,
+        "operating_theatres_available_now": 1
+      }
+    },
+    {
+      "facility_id": "COLACO_HOSPITAL_MANGALURU",
+      "name": "Colaco Hospital",
+      "facility_type": "hospital",
+      "address": "Lower Bendoor Road, Bendoor",
+      "city": "Mangaluru",
+      "state": "Karnataka",
+      "country": "India",
+      "pincode": "575002",
+      "location": {
+        "latitude": 12.8727086,
+        "longitude": 74.8565105,
+        "distance_from_nitk_km": 16.8,
+        "coordinate_source": "OpenStreetMap public geocoding reference",
+        "coordinate_confidence": "high"
+      },
+      "data_status": "synthetic_demo",
+      "capabilities": {
+        "TRAUMA_L1": {"available_now": 0, "total": 0},
+        "NEUROSURGERY": {"available_now": 0, "total": 0},
+        "CARDIAC_CATH": {"available_now": 0, "total": 0},
+        "VENTILATORS": {"available_now": 1, "total": 2},
+        "ICU": {"available_now": 2, "total": 4},
+        "CT_SCAN": {"available_now": 0, "total": 0},
+        "STABILIZATION": {"available_now": 2, "total": 3},
+        "BASIC_OXYGEN": {"available_now": 7, "total": 10},
+        "EMERGENCY_DEPT": {"available_now": 1, "total": 1, "is_open_now": true}
+      },
+      "timings": {
+        "emergency_department": "24x7 (synthetic)",
+        "opd": "Mon-Sat 09:00-17:00 (synthetic)",
+        "elective_ot": "Mon-Sat 09:00-16:00 (synthetic)"
+      },
+      "surgical_services": {
+        "elective_surgery_supported": true,
+        "emergency_surgery_supported": true,
+        "operating_theatres_total": 1,
+        "operating_theatres_available_now": 1
+      }
+    },
+    {
+      "facility_id": "CITY_HOSPITAL_MANGALURU",
+      "name": "City Hospital Research and Diagnostic Center",
+      "facility_type": "hospital",
+      "address": "Kudumal Ranga Rao Road, Mallikatte",
+      "city": "Mangaluru",
+      "state": "Karnataka",
+      "country": "India",
+      "pincode": "575002",
+      "location": {
+        "latitude": 12.8796103,
+        "longitude": 74.8531752,
+        "distance_from_nitk_km": 15.95,
+        "coordinate_source": "OpenStreetMap public geocoding reference",
+        "coordinate_confidence": "high"
+      },
+      "data_status": "synthetic_demo",
+      "capabilities": {
+        "TRAUMA_L1": {"available_now": 0, "total": 0},
+        "NEUROSURGERY": {"available_now": 0, "total": 0},
+        "CARDIAC_CATH": {"available_now": 0, "total": 0},
+        "VENTILATORS": {"available_now": 1, "total": 2},
+        "ICU": {"available_now": 3, "total": 5},
+        "CT_SCAN": {"available_now": 1, "total": 1},
+        "STABILIZATION": {"available_now": 3, "total": 4},
+        "BASIC_OXYGEN": {"available_now": 10, "total": 14},
+        "EMERGENCY_DEPT": {"available_now": 1, "total": 1, "is_open_now": true}
+      },
+      "timings": {
+        "emergency_department": "24x7 (synthetic)",
+        "opd": "Mon-Sat 09:00-17:00 (synthetic)",
+        "elective_ot": "Mon-Sat 09:00-16:00 (synthetic)"
+      },
+      "surgical_services": {
+        "elective_surgery_supported": true,
+        "emergency_surgery_supported": true,
+        "operating_theatres_total": 2,
+        "operating_theatres_available_now": 1
+      }
+    }
+  ]
+}

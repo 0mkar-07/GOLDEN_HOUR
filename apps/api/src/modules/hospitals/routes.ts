@@ -17,9 +17,45 @@ export async function registerHospitalRoutes(fastify: FastifyInstance) {
   fastify.get(
     '/api/v1/hospitals',
     { preHandler: [requireAuth] },
-    async (_req, reply: FastifyReply) => {
-      const hospitals = store.listHospitals();
+    async (req: FastifyRequest, reply: FastifyReply) => {
+      const query = req.query as { dataset?: 'demo' | 'nitk23' | 'all' };
+      const hospitals = store.listHospitals(query);
       return reply.status(200).send({ hospitals });
+    }
+  );
+
+  // Tabular hospital directory matrix with rich capabilities & NIL values (Stage 2 & 5)
+  fastify.get(
+    '/api/v1/hospitals/tabular',
+    { preHandler: [requireAuth] },
+    async (req: FastifyRequest, reply: FastifyReply) => {
+      const query = req.query as {
+        facilityType?: string;
+        service?: string;
+        maxDistanceKm?: string;
+      };
+      const maxDist = query.maxDistanceKm ? parseFloat(query.maxDistanceKm) : undefined;
+      const hospitals = store.getTabularHospitals({
+        facilityType: query.facilityType,
+        service: query.service,
+        maxDistanceKm: Number.isFinite(maxDist) ? maxDist : undefined,
+      });
+      return reply.status(200).send({
+        hospitals,
+        total: hospitals.length,
+        region: 'nitk-surathkal-30km',
+        datasetStatus: 'synthetic_demo',
+      });
+    }
+  );
+
+  // Import validation and provenance audit report (Stage 1 & 3)
+  fastify.get(
+    '/api/v1/hospitals/import-report',
+    { preHandler: [requireAuth] },
+    async (_req, reply: FastifyReply) => {
+      const report = store.getImportReport();
+      return reply.status(200).send({ report });
     }
   );
 

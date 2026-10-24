@@ -121,8 +121,9 @@ class SimulationService {
     this.completed = false;
     this.runVersion += 1;
 
-    // Reset ambulance position to scene start
-    store.updateAmbulancePosition(120, 150, 40.71, -74.02);
+    // Reset ambulance position to selected scenario origin (or NITK default)
+    const origin = store.ambulanceOrigin;
+    store.updateAmbulancePosition(120, 150, origin.lat, origin.lng);
     this.broadcastSimulationState();
     return this.getSimulationState().simulationRun;
   }

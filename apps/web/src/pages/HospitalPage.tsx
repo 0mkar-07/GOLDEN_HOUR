@@ -39,6 +39,7 @@ import { apiClient, ApiError } from '../lib/api-client';
 import { useAuth } from '../context/AuthContext';
 import { useHospitalDirectory } from '../hooks/useHospitalDirectory';
 import { subscribeToRealtimeEvent } from '../lib/socket';
+import { HospitalDirectoryTable } from '../components/HospitalDirectoryTable';
 
 export const HospitalPage: React.FC = () => {
   const { user } = useAuth();
@@ -960,6 +961,12 @@ export const HospitalPage: React.FC = () => {
           ))}
         </div>
       </div>
+
+      {/* 23 Facilities Regional Directory & Capability Matrix (Stage 5) */}
+      <HospitalDirectoryTable
+        selectedHospitalId={selectedHospitalId}
+        onSelectHospital={(id) => setSelectedHospitalId(id)}
+      />
 
       {/* Edit Resource Pool Modal */}
       {editingPool && (

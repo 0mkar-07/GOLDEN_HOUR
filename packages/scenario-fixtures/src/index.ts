@@ -479,11 +479,14 @@ export const SEEDED_AMBULANCE = {
   initialPosition: {
     x: 120,
     y: 150,
-    lat: 40.71,
-    lng: -74.02,
+    lat: 13.0108,
+    lng: 74.7936,
     speed: 0,
     heading: 85,
     serverSequence: 1,
     observedAt: new Date('2026-10-24T08:00:00Z').toISOString(),
   },
 };
+
+export * from './importer.js';
+

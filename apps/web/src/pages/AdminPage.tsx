@@ -18,15 +18,17 @@ import {
   Compass,
   Map as MapIcon,
   Box,
+  Building2,
 } from 'lucide-react';
 import { apiClient } from '../lib/api-client';
 import { subscribeToRealtimeEvent } from '../lib/socket';
 import { AdminOverviewDto, AuditEventDto, ReceivingStatus, HospitalDto } from '@goldenhour/contracts';
 import { Simulation3DView } from '../components/Simulation3DView';
 import { LiveMap } from '../components/LiveMap';
+import { HospitalDirectoryTable } from '../components/HospitalDirectoryTable';
 
 export const AdminPage: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'fleet' | 'map' | 'simulation' | 'cases' | 'audit' | 'settings'>('fleet');
+  const [activeTab, setActiveTab] = useState<'fleet' | 'map' | 'simulation' | 'cases' | 'audit' | 'settings' | 'directory'>('fleet');
 
   // Overview & cases state
   const [overview, setOverview] = useState<AdminOverviewDto | null>(null);
@@ -395,6 +397,18 @@ export const AdminPage: React.FC = () => {
         >
           <Box className="w-4 h-4" />
           3D Digital Twin Simulation
+        </button>
+
+        <button
+          onClick={() => setActiveTab('directory')}
+          className={`flex items-center gap-2 px-4 py-2.5 text-xs font-bold transition border-b-2 whitespace-nowrap ${
+            activeTab === 'directory'
+              ? 'border-[#174C49] text-[#174C49]'
+              : 'border-transparent text-[#596B69] hover:text-[#172B2A]'
+          }`}
+        >
+          <Building2 className="w-4 h-4" />
+          NITK 23 Hospital Directory
         </button>
 
         <button
@@ -807,6 +821,14 @@ export const AdminPage: React.FC = () => {
             </button>
           </form>
         </div>
+      )}
+
+      {/* TAB 7: 23 HOSPITAL DIRECTORY & CAPABILITY MATRIX (Stage 5) */}
+      {activeTab === 'directory' && (
+        <HospitalDirectoryTable
+          selectedHospitalId={selectedHospitalId || undefined}
+          onSelectHospital={(id) => setSelectedHospitalId(id)}
+        />
       )}
 
       {/* Reset Confirmation Modal */}

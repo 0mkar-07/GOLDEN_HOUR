@@ -15,8 +15,18 @@ const StepRequestSchema = z.object({
 });
 
 const TrafficScenarioSchema = z.object({
-  edgeId: z.string().default('edge-3'),
-  multiplier: z.number().min(1.0).max(10.0).default(3.0),
+  edgeId: z.string().optional().default('edge-3'),
+  multiplier: z.number().min(1.0).max(10.0).optional().default(3.0),
+  preset: z
+    .enum(['FREE_FLOW', 'MORNING_PEAK', 'EVENING_PEAK', 'CORRIDOR_CONGESTION', 'INCIDENT_CLOSURE'])
+    .optional(),
+});
+
+const OriginRequestSchema = z.object({
+  lat: z.number().min(-90).max(90),
+  lng: z.number().min(-180).max(180),
+  expectedRunVersion: z.number().int().positive().optional(),
+  idempotencyKey: z.string().optional(),
 });
 
 const HospitalSurgeScenarioSchema = z.object({
@@ -35,6 +45,57 @@ export async function registerSimulationRoutes(fastify: FastifyInstance) {
     async (_req: FastifyRequest, reply: FastifyReply) => {
       const state = simulationService.getSimulationState();
       return reply.status(200).send(state);
+    }
+  );
+
+  // Ambulance origin pin placement with 30 km boundary check and road snap (Stage 6)
+  fastify.post(
+    '/api/v1/simulation/origin',
+    { preHandler: [requireAuth] },
+    async (req: FastifyRequest, reply: FastifyReply) => {
+      const parseResult = OriginRequestSchema.safeParse(req.body);
+      if (!parseResult.success) {
+        return reply.status(400).send({
+          code: 'VALIDATION_ERROR',
+          message: 'Invalid coordinate payload for ambulance origin pin',
+          details: parseResult.error.format(),
+        });
+      }
+
+      const { lat, lng, expectedRunVersion } = parseResult.data;
+      try {
+        const result = store.setAmbulanceOrigin(lat, lng, expectedRunVersion);
+        simulationService.reset();
+        return reply.status(200).send({
+          message: 'Ambulance origin updated and snapped to road network',
+          ...result,
+        });
+      } catch (err: any) {
+        if (err.message.includes('OUT_OF_REGION')) {
+          return reply.status(400).send({
+            code: 'OUT_OF_REGION',
+            message: err.message,
+          });
+        }
+        return reply.status(400).send({
+          code: 'INVALID_ORIGIN',
+          message: err.message,
+        });
+      }
+    }
+  );
+
+  // Reset ambulance origin to NITK default (13.0108, 74.7936)
+  fastify.post(
+    '/api/v1/simulation/origin/reset-default',
+    { preHandler: [requireAuth] },
+    async (_req: FastifyRequest, reply: FastifyReply) => {
+      const defaultOrigin = store.resetAmbulanceOriginToDefault();
+      simulationService.reset();
+      return reply.status(200).send({
+        message: 'Ambulance origin reset to NITK default (13.0108, 74.7936)',
+        origin: defaultOrigin,
+      });
     }
   );
 
@@ -122,18 +183,44 @@ export async function registerSimulationRoutes(fastify: FastifyInstance) {
           details: parseResult.error.format(),
         });
       }
-      const { edgeId, multiplier } = parseResult.data;
-      const edgeExists = SEEDED_ROAD_GRAPH.edges.some((e) => e.id === edgeId);
+      let { edgeId, multiplier, preset } = parseResult.data;
+
+      // Handle presets (Stage 7)
+      if (preset) {
+        switch (preset) {
+          case 'FREE_FLOW':
+            multiplier = 1.0;
+            break;
+          case 'MORNING_PEAK':
+            multiplier = 1.8;
+            break;
+          case 'EVENING_PEAK':
+            multiplier = 2.2;
+            break;
+          case 'CORRIDOR_CONGESTION':
+            multiplier = 3.5;
+            break;
+          case 'INCIDENT_CLOSURE':
+            multiplier = 10.0;
+            break;
+        }
+      }
+
+      const activeEdgeId = edgeId || 'edge-3';
+      const edgeExists = SEEDED_ROAD_GRAPH.edges.some((e) => e.id === activeEdgeId);
       if (!edgeExists) {
         return reply.status(400).send({
           code: 'EDGE_NOT_FOUND',
-          message: `Road edge ${edgeId} not found in road network graph`,
+          message: `Road edge ${activeEdgeId} not found in road network graph`,
         });
       }
 
-      simulationService.injectTraffic(edgeId, multiplier, req.user!.id);
+      simulationService.injectTraffic(activeEdgeId, multiplier, req.user!.id);
       return reply.status(200).send({
-        message: `Traffic congestion ${multiplier}x applied on edge ${edgeId}`,
+        message: `Simulated traffic ${multiplier}x travel time applied on edge ${activeEdgeId}`,
+        preset: preset ?? 'CUSTOM',
+        multiplier,
+        label: `${multiplier}x travel time`,
       });
     });
 

@@ -103,6 +103,51 @@ export const apiClient = {
     });
   },
 
+  async getTabularHospitals(filters?: {
+    facilityType?: string;
+    service?: string;
+    maxDistanceKm?: number;
+  }): Promise<{ hospitals: HospitalDto[]; total: number; region: string; datasetStatus: string }> {
+    const params = new URLSearchParams();
+    if (filters?.facilityType) params.set('facilityType', filters.facilityType);
+    if (filters?.service) params.set('service', filters.service);
+    if (filters?.maxDistanceKm !== undefined) params.set('maxDistanceKm', String(filters.maxDistanceKm));
+    const qs = params.toString() ? `?${params.toString()}` : '';
+    return request<any>(`/api/v1/hospitals/tabular${qs}`, {
+      method: 'GET',
+    });
+  },
+
+  async getImportReport(): Promise<{ report: any }> {
+    return request<{ report: any }>('/api/v1/hospitals/import-report', {
+      method: 'GET',
+    });
+  },
+
+  async setSimulationOrigin(
+    lat: number,
+    lng: number,
+    expectedRunVersion?: number
+  ): Promise<{
+    message: string;
+    requested: { lat: number; lng: number };
+    snapped: { lat: number; lng: number };
+    snapDistanceMeters: number;
+    distanceFromNitkKm: number;
+    runVersion: number;
+  }> {
+    return request<any>('/api/v1/simulation/origin', {
+      method: 'POST',
+      body: JSON.stringify({ lat, lng, expectedRunVersion }),
+    });
+  },
+
+  async resetSimulationOriginToDefault(): Promise<{ message: string; origin: { lat: number; lng: number } }> {
+    return request<any>('/api/v1/simulation/origin/reset-default', {
+      method: 'POST',
+    });
+  },
+
   async getHospital(id: string): Promise<{ hospital: HospitalDto }> {
     return request<{ hospital: HospitalDto }>(`/api/v1/hospitals/${id}`, {
       method: 'GET',
@@ -449,6 +494,16 @@ export const apiClient = {
     return request<any>('/api/v1/simulation/scenarios/traffic', {
       method: 'POST',
       body: JSON.stringify({ edgeId, multiplier }),
+    });
+  },
+
+  async setTrafficPreset(
+    preset: 'FREE_FLOW' | 'MORNING_PEAK' | 'EVENING_PEAK' | 'CORRIDOR_CONGESTION' | 'INCIDENT_CLOSURE',
+    edgeId = 'edge-3'
+  ): Promise<{ message: string; preset: string; multiplier: number; label: string }> {
+    return request<any>('/api/v1/simulation/scenarios/traffic', {
+      method: 'POST',
+      body: JSON.stringify({ preset, edgeId }),
     });
   },
 

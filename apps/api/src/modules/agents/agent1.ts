@@ -1,5 +1,8 @@
-import { AssessmentObservationsDto, Agent1Proposal } from '@goldenhour/contracts';
+import { AssessmentObservationsDto, Agent1Proposal, CAPABILITY_CATALOGUE } from '@goldenhour/contracts';
 import { getRequirementsInterpreter } from './interpreter.js';
+import { agentTools } from './tools.js';
+
+export { agentTools };
 
 export const AGENT_1_VERSION = '2.0.0-gemini-hybrid';
 

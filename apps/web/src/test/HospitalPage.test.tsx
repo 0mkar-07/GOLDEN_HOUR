@@ -121,8 +121,8 @@ describe('Phase 3 — HospitalPage UI Vertical Slice', () => {
       );
     });
 
-    expect(screen.getByText('St. Jude Metropolitan Trauma Center')).toBeInTheDocument();
-    expect(screen.getByText('HOSP-A')).toBeInTheDocument();
+    expect(screen.getAllByText('St. Jude Metropolitan Trauma Center')[0]).toBeInTheDocument();
+    expect(screen.getAllByText('HOSP-A')[0]).toBeInTheDocument();
     expect(screen.getByText('VENTILATOR')).toBeInTheDocument();
     expect(screen.getByText('3 Available')).toBeInTheDocument();
     expect(screen.getByText(/TRAUMA_SURGEON/)).toBeInTheDocument();

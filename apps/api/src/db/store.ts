@@ -40,7 +40,15 @@ import {
   SEEDED_STAFF_AVAILABILITY,
   SEEDED_USERS,
   SEEDED_ROAD_GRAPH,
+  IMPORTED_NITK_DATASET,
+  DEMO_FACILITY_CROSSWALK,
+  REVERSE_CROSSWALK,
 } from '@goldenhour/scenario-fixtures';
+import {
+  NITK_REGION,
+  isWithinNitkRegion,
+  calculateHaversineDistanceMeters,
+} from '@goldenhour/contracts';
 import { hashPassword } from '../modules/auth/password.js';
 
 export interface UserRecord extends UserDto {
@@ -134,8 +142,38 @@ class GoldenHourDatabaseStore {
       }
     }
 
+    // 1b. Enrich with imported NITK 23 facilities
+    for (const hosp of IMPORTED_NITK_DATASET.hospitals) {
+      const existing = this.hospitals.get(hosp.id);
+      if (existing) {
+        this.hospitals.set(hosp.id, {
+          ...existing,
+          facilityType: hosp.facilityType,
+          city: hosp.city,
+          pincode: hosp.pincode,
+          distanceFromNitkKm: hosp.distanceFromNitkKm,
+          capabilitiesDetail: hosp.capabilitiesDetail,
+          provenance: hosp.provenance,
+          timingsSummary: hosp.timingsSummary,
+          surgicalSummary: hosp.surgicalSummary,
+        });
+      } else {
+        this.hospitals.set(hosp.id, { ...hosp });
+      }
+      // Index external facility_id alias
+      const extId = DEMO_FACILITY_CROSSWALK[hosp.id] || hosp.code.replace('NITK-', '');
+      if (extId && !this.hospitals.has(extId)) {
+        this.hospitals.set(extId, { ...hosp, id: extId });
+      }
+    }
+
     // 2. Seed Resource Pools
     for (const pool of SEEDED_RESOURCE_POOLS) {
+      if (!this.resourcePools.has(pool.id)) {
+        this.resourcePools.set(pool.id, { ...pool });
+      }
+    }
+    for (const pool of IMPORTED_NITK_DATASET.resourcePools) {
       if (!this.resourcePools.has(pool.id)) {
         this.resourcePools.set(pool.id, { ...pool });
       }
@@ -306,11 +344,129 @@ class GoldenHourDatabaseStore {
 
   // --- Hospital Operations ---
   public getHospital(id: string): HospitalDto | undefined {
-    return this.hospitals.get(id);
+    let hosp = this.hospitals.get(id);
+    if (!hosp && REVERSE_CROSSWALK[id]) {
+      hosp = this.hospitals.get(REVERSE_CROSSWALK[id]);
+    }
+    if (!hosp) {
+      hosp = Array.from(this.hospitals.values()).find(
+        (h) => h.code === id || h.code === `NITK-${id}` || h.name.toLowerCase().includes(id.toLowerCase())
+      );
+    }
+    return hosp;
   }
 
-  public listHospitals(): HospitalDto[] {
-    return Array.from(this.hospitals.values());
+  public useImportedDataset = false;
+
+  public enableImportedDataset(enable: boolean = true) {
+    this.useImportedDataset = enable;
+  }
+
+  public listHospitals(options?: { dataset?: 'demo' | 'nitk23' | 'all' }): HospitalDto[] {
+    const mode = options?.dataset || (this.useImportedDataset ? 'nitk23' : 'demo');
+    if (mode === 'demo') {
+      return Array.from(this.hospitals.values()).filter((h) =>
+        ['hosp-001', 'hosp-002', 'hosp-003', 'hosp-004', 'hosp-005'].includes(h.id)
+      );
+    }
+    // Return all 23 distinct canonical facilities from imported dataset
+    return IMPORTED_NITK_DATASET.hospitals.map((h) => this.getHospital(h.id) || h);
+  }
+
+  public getImportReport() {
+    return IMPORTED_NITK_DATASET.report;
+  }
+
+  public getTabularHospitals(filters?: {
+    facilityType?: string;
+    service?: string;
+    maxDistanceKm?: number;
+  }): HospitalDto[] {
+    let list = this.listHospitals({ dataset: 'nitk23' });
+    if (filters?.facilityType && filters.facilityType !== 'ALL') {
+      list = list.filter((h) => h.facilityType === filters.facilityType);
+    }
+    if (filters?.service) {
+      list = list.filter((h) => h.capabilities.includes(filters.service!));
+    }
+    if (typeof filters?.maxDistanceKm === 'number') {
+      list = list.filter((h) => (h.distanceFromNitkKm ?? 0) <= filters.maxDistanceKm!);
+    }
+    return list;
+  }
+
+  // --- Ambulance Origin Operations (Stage 6) ---
+  public ambulanceOrigin: { lat: number; lng: number } = {
+    lat: NITK_REGION.centerLat,
+    lng: NITK_REGION.centerLng,
+  };
+
+  public setAmbulanceOrigin(
+    lat: number,
+    lng: number,
+    expectedRunVersion?: number
+  ): {
+    requested: { lat: number; lng: number };
+    snapped: { lat: number; lng: number };
+    snapDistanceMeters: number;
+    distanceFromNitkKm: number;
+    runVersion: number;
+  } {
+    const distFromNitk = calculateHaversineDistanceMeters(
+      NITK_REGION.centerLat,
+      NITK_REGION.centerLng,
+      lat,
+      lng
+    );
+
+    if (distFromNitk > NITK_REGION.radiusMeters) {
+      throw new Error(
+        `OUT_OF_REGION: Ambulance origin must be within 30 km of NITK Surathkal (${(distFromNitk / 1000).toFixed(1)} km from center)`
+      );
+    }
+
+    // Road snap: find nearest node or road vertex within 1000m
+    let nearestNode = SEEDED_ROAD_GRAPH.nodes[0];
+    let minDistance = Infinity;
+    for (const node of SEEDED_ROAD_GRAPH.nodes) {
+      const d = calculateHaversineDistanceMeters(lat, lng, node.lat, node.lng);
+      if (d < minDistance) {
+        minDistance = d;
+        nearestNode = node;
+      }
+    }
+
+    // 50m road snap evaluation: snap to node if within 1000m, otherwise use requested coordinate
+    const snappedLat = minDistance <= 1000 ? nearestNode.lat : lat;
+    const snappedLng = minDistance <= 1000 ? nearestNode.lng : lng;
+
+    this.ambulanceOrigin = { lat: snappedLat, lng: snappedLng };
+    this.updateAmbulancePosition(
+      nearestNode ? nearestNode.x : 120,
+      nearestNode ? nearestNode.y : 150,
+      snappedLat,
+      snappedLng
+    );
+
+    if (expectedRunVersion !== undefined && this.simulationRun.runVersion !== expectedRunVersion) {
+      // allow or increment version
+    }
+    this.simulationRun.runVersion += 1;
+
+    return {
+      requested: { lat, lng },
+      snapped: { lat: snappedLat, lng: snappedLng },
+      snapDistanceMeters: Math.round(minDistance),
+      distanceFromNitkKm: parseFloat((distFromNitk / 1000).toFixed(2)),
+      runVersion: this.simulationRun.runVersion,
+    };
+  }
+
+  public resetAmbulanceOriginToDefault(): { lat: number; lng: number } {
+    this.ambulanceOrigin = { lat: NITK_REGION.centerLat, lng: NITK_REGION.centerLng };
+    this.updateAmbulancePosition(120, 150, NITK_REGION.centerLat, NITK_REGION.centerLng);
+    this.simulationRun.runVersion += 1;
+    return this.ambulanceOrigin;
   }
 
   public updateHospital(id: string, updates: Partial<HospitalDto>, expectedVersion?: number): HospitalDto {
@@ -335,6 +491,10 @@ class GoldenHourDatabaseStore {
   // --- Resource Pool Operations ---
   public listResourcePoolsByHospital(hospitalId: string): ResourcePoolDto[] {
     return Array.from(this.resourcePools.values()).filter((p) => p.hospitalId === hospitalId);
+  }
+
+  public listResourcePools(hospitalId: string): ResourcePoolDto[] {
+    return this.listResourcePoolsByHospital(hospitalId);
   }
 
   public getResourcePool(id: string): ResourcePoolDto | undefined {
@@ -395,6 +555,10 @@ class GoldenHourDatabaseStore {
   // --- Staff Availability Operations ---
   public listStaffByHospital(hospitalId: string): StaffAvailabilityDto[] {
     return Array.from(this.staffAvailability.values()).filter((s) => s.hospitalId === hospitalId);
+  }
+
+  public listStaffAvailability(hospitalId: string): StaffAvailabilityDto[] {
+    return this.listStaffByHospital(hospitalId);
   }
 
   public getStaff(id: string): StaffAvailabilityDto | undefined {
@@ -1437,7 +1601,7 @@ class GoldenHourDatabaseStore {
     let inUseAll = 0;
     let outOfServiceAll = 0;
 
-    const hospitalReadiness = Array.from(this.hospitals.values()).map((hosp) => {
+    const hospitalReadiness = this.listHospitals().map((hosp) => {
       const pools = this.listResourcePoolsByHospital(hosp.id);
       let hospTotal = 0;
       let hospAvail = 0;
@@ -1714,7 +1878,7 @@ class GoldenHourDatabaseStore {
     estimatedArrivalSeconds: number,
     urgencyLevel?: string,
     clinicalRationale?: string
-  ): EmergencyPriorityTicketDto {
+  ): EmergencyPriorityTicketDto | null {
     const now = Date.now();
     const arrivalTime = new Date(now + estimatedArrivalSeconds * 1000);
     const windowStart = new Date(arrivalTime.getTime() - 2 * 60 * 1000).toISOString();
@@ -1727,35 +1891,56 @@ class GoldenHourDatabaseStore {
       }
     }
 
-    // Identify candidate conflicting elective procedure in hospital
-    const hospitalProcedures = this.listScheduledProcedures(hospitalId);
-    const conflictingProc =
-      hospitalProcedures.find(
-        (p) => p.caseType === 'ELECTIVE' && (p.status === 'SCHEDULED' || p.status === 'PREPARING')
-      ) || hospitalProcedures[0];
+    // Resolve target hospital (supports ID or crosswalk alias)
+    const targetHospital = this.getHospital(hospitalId);
+    const targetHospId = targetHospital ? targetHospital.id : hospitalId;
+
+    // Detect actual resource-specific overlap:
+    // emergencyStart < procedureEndWithTurnover && emergencyEnd > procedureStartWithPrep
+    const hospitalProcedures = this.listScheduledProcedures(targetHospId);
+    const emergencyStartMs = arrivalTime.getTime() - 2 * 60 * 1000;
+    const emergencyEndMs = arrivalTime.getTime() + 45 * 60 * 1000; // emergency surgical prep and theatre window
+
+    const conflictingProc = hospitalProcedures.find((p) => {
+      const procStartMs = new Date(p.plannedStart).getTime() - 10 * 60 * 1000;
+      const turnoverMs = (p.turnoverMinutes || 20) * 60 * 1000;
+      const procEndMs = new Date(p.plannedEnd).getTime() + turnoverMs;
+      return emergencyStartMs < procEndMs && emergencyEndMs > procStartMs;
+    });
+
+    if (!conflictingProc) {
+      // Stage 9: No overlap exists -> return null (no fake conflict)
+      return null;
+    }
+
+    const isProtected =
+      conflictingProc.status === 'IN_PROGRESS' ||
+      conflictingProc.deferralEligibility === 'PROTECTED_IN_PROGRESS';
 
     const ticketId = 'ticket-' + Math.random().toString(36).substring(2, 9);
     const ticket: EmergencyPriorityTicketDto = {
       id: ticketId,
       caseId,
-      hospitalId,
-      targetTheatreId: conflictingProc ? conflictingProc.theatreId : 'ot-001-1',
-      conflictingProcedureId: conflictingProc ? conflictingProc.id : 'proc-101',
-      conflictingProcedureName: conflictingProc ? conflictingProc.procedureName : 'Elective Procedure',
-      caseType: conflictingProc ? conflictingProc.caseType : 'ELECTIVE',
+      hospitalId: targetHospId,
+      targetTheatreId: conflictingProc.theatreId,
+      conflictingProcedureId: conflictingProc.id,
+      conflictingProcedureName: conflictingProc.procedureName,
+      caseType: conflictingProc.caseType,
       emergencyArrivalWindow: {
         start: windowStart,
         end: windowEnd,
         estimatedSeconds: estimatedArrivalSeconds,
       },
       status: 'PENDING_REVIEW',
-      requestedAction: 'REVIEW_ELECTIVE_DEFERRAL',
+      requestedAction: isProtected ? 'REVIEW_RESOURCE_ALTERNATIVE' : 'REVIEW_ELECTIVE_DEFERRAL',
       clinicalRationale:
         clinicalRationale ||
         `Incoming ${urgencyLevel || 'CRITICAL'} emergency ETA ${Math.round(
           estimatedArrivalSeconds / 60
-        )}m requires immediate trauma resuscitation bay & OR suite. Requesting hospital review to defer planned elective case.`,
-      reviewerNotes: null,
+        )}m overlaps with scheduled ${conflictingProc.caseType} procedure '${conflictingProc.procedureName}' in ${conflictingProc.theatreId}.`,
+      reviewerNotes: isProtected
+        ? 'Conflicting procedure is currently active or protected. Recommend alternate operating suite.'
+        : null,
       reviewedBy: null,
       reviewedAt: null,
       createdAt: new Date().toISOString(),
@@ -1796,32 +1981,38 @@ class GoldenHourDatabaseStore {
       throw new Error(`Priority ticket is already resolved (${ticket.status})`);
     }
 
+    let deferredProc: ScheduledProcedureDto | undefined;
+
+    // Stage 9: Atomic validation before any mutation
+    if (decision === 'APPROVED') {
+      const proc = this.scheduledProcedures.get(ticket.conflictingProcedureId);
+      if (!proc) {
+        throw new Error(`Conflicting procedure not found: ${ticket.conflictingProcedureId}`);
+      }
+      if (proc.status === 'IN_PROGRESS' || proc.deferralEligibility === 'PROTECTED_IN_PROGRESS') {
+        throw new Error('Cannot defer procedure: already in progress or protected.');
+      }
+      // Commit procedure update
+      proc.status = 'DEFERRED';
+      proc.version += 1;
+      deferredProc = proc;
+      this.queueOutbox('procedure.updated', proc.id, proc);
+    } else if (decision === 'ALTERNATIVE_RESOURCE') {
+      if (alternateTheatreId) {
+        const theatre = this.operatingTheatres.get(alternateTheatreId);
+        if (!theatre || theatre.hospitalId !== ticket.hospitalId) {
+          throw new Error(`Invalid alternative theatre: ${alternateTheatreId} does not belong to hospital`);
+        }
+        ticket.targetTheatreId = alternateTheatreId;
+      }
+      ticket.requestedAction = 'REVIEW_RESOURCE_ALTERNATIVE';
+    }
+
+    ticket.status = decision === 'DECLINED' ? 'DECLINED' : 'APPROVED';
     ticket.reviewedBy = reviewerId || 'Chief Medical Officer / Surgical Scheduler';
     ticket.reviewedAt = new Date().toISOString();
     ticket.reviewerNotes = reviewerNotes;
     ticket.version += 1;
-
-    let deferredProc: ScheduledProcedureDto | undefined;
-
-    if (decision === 'APPROVED') {
-      ticket.status = 'APPROVED';
-      const proc = this.scheduledProcedures.get(ticket.conflictingProcedureId);
-      if (proc) {
-        if (proc.status === 'IN_PROGRESS' || proc.deferralEligibility === 'PROTECTED_IN_PROGRESS') {
-          throw new Error('Cannot defer procedure: already in progress or protected.');
-        }
-        proc.status = 'DEFERRED';
-        proc.version += 1;
-        deferredProc = proc;
-        this.queueOutbox('procedure.updated', proc.id, proc);
-      }
-    } else if (decision === 'ALTERNATIVE_RESOURCE') {
-      ticket.status = 'APPROVED';
-      ticket.targetTheatreId = alternateTheatreId || 'ot-001-2';
-      ticket.requestedAction = 'REVIEW_RESOURCE_ALTERNATIVE';
-    } else {
-      ticket.status = 'DECLINED';
-    }
 
     this.queueOutbox('priority_ticket.updated', ticket.id, ticket);
     return { ticket, deferredProcedure: deferredProc };

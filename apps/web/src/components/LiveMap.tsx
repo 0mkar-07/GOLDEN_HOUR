@@ -5,6 +5,7 @@ import {
   RecommendationDto,
   SharedRouteDto,
 } from '@goldenhour/contracts';
+import { apiClient } from '../lib/api-client';
 import {
   Navigation,
   Compass,
@@ -67,6 +68,8 @@ export const LiveMap: React.FC<LiveMapProps> = ({
   const [showTraffic, setShowTraffic] = useState<boolean>(true);
   const [followAmbulance, setFollowAmbulance] = useState<boolean>(true);
   const [inspectedHospital, setInspectedHospital] = useState<HospitalDto | null>(null);
+  const [pinPlacementMode, setPinPlacementMode] = useState<boolean>(false);
+  const [originFeedback, setOriginFeedback] = useState<string | null>(null);
 
   // Canvas Fallback State (when Google JS is unavailable or offline)
   const [zoom, setZoom] = useState<number>(1);
@@ -148,6 +151,33 @@ export const LiveMap: React.FC<LiveMapProps> = ({
       trafficLayerInstance.current = traffic;
       googleMapInstance.current = map;
 
+      // Draw 30 km regional boundary circle around NITK Surathkal (Stage 4 & Stage 6)
+      new (window as any).google.maps.Circle({
+        strokeColor: '#059669',
+        strokeOpacity: 0.6,
+        strokeWeight: 1.5,
+        fillColor: '#10b981',
+        fillOpacity: 0.04,
+        map,
+        center: { lat: 13.0108, lng: 74.7936 },
+        radius: 30000,
+      });
+
+      // Click listener for ambulance pin placement
+      map.addListener('click', async (e: any) => {
+        if (!e.latLng) return;
+        const lat = e.latLng.lat();
+        const lng = e.latLng.lng();
+        try {
+          const res = await apiClient.setSimulationOrigin(lat, lng);
+          setOriginFeedback(`Start pin placed: ${res.distanceFromNitkKm}km from NITK (${res.snapDistanceMeters}m road snap)`);
+          setTimeout(() => setOriginFeedback(null), 4000);
+        } catch (err: any) {
+          setOriginFeedback(err.message || 'Cannot place origin outside 30 km region');
+          setTimeout(() => setOriginFeedback(null), 4000);
+        }
+      });
+
       // Handle user manual pan: suspend follow
       map.addListener('dragstart', () => {
         setFollowAmbulance(false);
@@ -212,8 +242,8 @@ export const LiveMap: React.FC<LiveMapProps> = ({
     // Update Hospital Markers
     const currentMarkerMap = hospitalMarkersRef.current;
     hospitals.forEach((hosp) => {
-      const hLat = hosp.location?.lat ?? 40.7128;
-      const hLng = hosp.location?.lng ?? -74.0060;
+      const hLat = hosp.location?.lat ?? 13.0108;
+      const hLng = hosp.location?.lng ?? 74.7936;
       const isA = hosp.id === recommendation?.hospitalA?.hospitalId;
       const isB = hosp.id === recommendation?.hospitalB?.hospitalId;
       const isC = hosp.id === recommendation?.hospitalC?.hospitalId;
@@ -469,8 +499,47 @@ export const LiveMap: React.FC<LiveMapProps> = ({
           >
             <Maximize2 className="w-4 h-4" />
           </button>
+
+          {/* Choose Ambulance Start Pin (Stage 6) */}
+          <button
+            onClick={() => setPinPlacementMode(!pinPlacementMode)}
+            className={`flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-semibold border transition ${
+              pinPlacementMode
+                ? 'bg-amber-100 text-amber-900 border-amber-300 ring-2 ring-amber-400'
+                : 'bg-[#F6F8F8] text-[#172B2A] border-[#DCE5E3] hover:bg-[#EAF5F2]'
+            }`}
+            title="Click map to choose ambulance start pin (30 km regional boundary)"
+          >
+            <MapPin className="w-3.5 h-3.5 text-amber-600" />
+            {pinPlacementMode ? 'Click Map' : 'Set Pin'}
+          </button>
+
+          {/* Reset to NITK Default */}
+          <button
+            onClick={async () => {
+              try {
+                await apiClient.resetSimulationOriginToDefault();
+                setOriginFeedback('Ambulance origin reset to NITK Surathkal default (13.0108, 74.7936)');
+                setTimeout(() => setOriginFeedback(null), 3500);
+              } catch (err: any) {
+                setOriginFeedback(err.message);
+              }
+            }}
+            className="px-2 py-1 rounded-lg text-xs font-semibold bg-[#F6F8F8] text-[#596B69] border border-[#DCE5E3] hover:bg-[#EAF5F2] hover:text-[#172B2A] transition"
+            title="Reset ambulance start to NITK default"
+          >
+            NITK Default
+          </button>
         </div>
       </div>
+
+      {/* Origin Pin Feedback Toast */}
+      {originFeedback && (
+        <div className="absolute top-16 left-1/2 -translate-x-1/2 z-20 bg-slate-900/90 text-white text-xs px-4 py-2 rounded-xl border border-slate-700 shadow-lg flex items-center gap-2 animate-fade-in">
+          <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+          <span>{originFeedback}</span>
+        </div>
+      )}
 
       {/* 3. Resilient Fallback Canvas (When Google Maps JS is loading, offline, or in test environment) */}
       {!googleMapsReady && (

@@ -72,7 +72,15 @@ export async function registerSchedulingRoutes(fastify: FastifyInstance) {
         clinicalRationale
       );
 
-      return reply.status(201).send({ ticket });
+      if (!ticket) {
+        return reply.status(200).send({
+          conflict: false,
+          ticket: null,
+          message: 'No conflicting scheduled procedure overlaps with emergency arrival window',
+        });
+      }
+
+      return reply.status(201).send({ conflict: true, ticket });
     }
   );
 

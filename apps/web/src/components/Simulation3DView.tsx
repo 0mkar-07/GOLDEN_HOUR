@@ -43,12 +43,23 @@ export const Simulation3DView: React.FC<Simulation3DViewProps> = ({ activeCaseId
   const [cameraView, setCameraView] = useState<'follow' | 'isometric' | 'top'>('isometric');
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const simStateRef = useRef<any>(simState);
+  useEffect(() => {
+    simStateRef.current = simState;
+  }, [simState]);
+
+  const cameraViewRef = useRef<'follow' | 'isometric' | 'top'>(cameraView);
+  useEffect(() => {
+    cameraViewRef.current = cameraView;
+  }, [cameraView]);
+
   const threeStateRef = useRef<{
     renderer?: THREE.WebGLRenderer;
     scene?: THREE.Scene;
     camera?: THREE.PerspectiveCamera;
     ambulanceMesh?: THREE.Group;
     beaconLight?: THREE.PointLight;
+    haloMesh?: THREE.Mesh;
     animFrameId?: number;
     controlsTarget?: THREE.Vector3;
   }>({});
@@ -108,7 +119,7 @@ export const Simulation3DView: React.FC<Simulation3DViewProps> = ({ activeCaseId
   // Genuine Three.js 3D Scene Initialization & Loop
   // -------------------------------------------------------------
   useEffect(() => {
-    if (!is3DMode || !webGLSupported || !canvasRef.current || !simState) return;
+    if (!is3DMode || !webGLSupported || !canvasRef.current) return;
 
     const canvas = canvasRef.current;
     const width = canvas.parentElement?.clientWidth || 800;
@@ -354,6 +365,28 @@ export const Simulation3DView: React.FC<Simulation3DViewProps> = ({ activeCaseId
     lightbar.position.set(0, 2.6, 0.2);
     ambulanceGroup.add(lightbar);
 
+    // 8b. Screen-space glowing beacon halo ring (Stage 10)
+    const haloGeom = new THREE.TorusGeometry(3.2, 0.35, 8, 24);
+    const haloMat = new THREE.MeshBasicMaterial({
+      color: 0x38bdf8,
+      transparent: true,
+      opacity: 0.85,
+    });
+    const haloMesh = new THREE.Mesh(haloGeom, haloMat);
+    haloMesh.rotation.x = Math.PI / 2;
+    haloMesh.position.set(0, 4.5, 0);
+    ambulanceGroup.add(haloMesh);
+
+    // Initial positioning: snap immediately to current telemetry without easing from world origin
+    const initialPos = simStateRef.current?.ambulancePosition;
+    if (initialPos) {
+      const [ix, , iz] = mapTo3D(initialPos.x, initialPos.y);
+      ambulanceGroup.position.set(ix, 0, iz);
+      if (typeof initialPos.heading === 'number') {
+        ambulanceGroup.rotation.y = ((90 - initialPos.heading) * Math.PI) / 180;
+      }
+    }
+
     scene.add(ambulanceGroup);
 
     // Store references
@@ -363,6 +396,7 @@ export const Simulation3DView: React.FC<Simulation3DViewProps> = ({ activeCaseId
       camera,
       ambulanceMesh: ambulanceGroup,
       beaconLight,
+      haloMesh,
     };
 
     // Animation Loop
@@ -370,37 +404,44 @@ export const Simulation3DView: React.FC<Simulation3DViewProps> = ({ activeCaseId
     const animate = () => {
       threeStateRef.current.animFrameId = requestAnimationFrame(animate);
 
-      const delta = clock.getDelta();
+      const delta = Math.min(clock.getDelta(), 0.1);
       const elapsed = clock.getElapsedTime();
 
-      // Beacon flashing effect
+      // Flashing beacon & pulsing halo
       if (beaconLight) {
         beaconLight.color.setHex(Math.sin(elapsed * 12) > 0 ? 0xef4444 : 0x3b82f6);
       }
+      haloMat.opacity = 0.5 + 0.4 * Math.sin(elapsed * 6);
 
-      // Update ambulance position from simulation state
-      const currentPos = simState?.ambulancePosition;
+      // Read dynamic state from refs to prevent scene disposal
+      const currentPos = simStateRef.current?.ambulancePosition;
+      const currentCameraView = cameraViewRef.current;
+
       if (currentPos && ambulanceGroup) {
         const [targetX, , targetZ] = mapTo3D(currentPos.x, currentPos.y);
-        // Smooth interpolation
-        ambulanceGroup.position.x += (targetX - ambulanceGroup.position.x) * 0.15;
-        ambulanceGroup.position.z += (targetZ - ambulanceGroup.position.z) * 0.15;
 
-        // Rotation from heading
+        // Frame-rate independent exponential smoothing (Stage 10.12)
+        const alpha = 1 - Math.exp(-6.0 * delta);
+        ambulanceGroup.position.x += (targetX - ambulanceGroup.position.x) * alpha;
+        ambulanceGroup.position.z += (targetZ - ambulanceGroup.position.z) * alpha;
+
+        // Rotation from heading with shortest angle smoothing (Stage 10.13)
         if (typeof currentPos.heading === 'number') {
           const targetRad = ((90 - currentPos.heading) * Math.PI) / 180;
-          ambulanceGroup.rotation.y = targetRad;
+          let diff = ((targetRad - ambulanceGroup.rotation.y + Math.PI) % (Math.PI * 2)) - Math.PI;
+          ambulanceGroup.rotation.y += diff * (1 - Math.exp(-8.0 * delta));
         }
 
         // Camera follow modes
-        if (cameraView === 'follow') {
-          camera.position.x += (ambulanceGroup.position.x - camera.position.x) * 0.08;
-          camera.position.z += (ambulanceGroup.position.z + 55 - camera.position.z) * 0.08;
-          camera.position.y = 42;
+        if (currentCameraView === 'follow') {
+          const camAlpha = 1 - Math.exp(-4.5 * delta);
+          camera.position.x += (ambulanceGroup.position.x - camera.position.x) * camAlpha;
+          camera.position.z += (ambulanceGroup.position.z + 52 - camera.position.z) * camAlpha;
+          camera.position.y = 38;
           camera.lookAt(ambulanceGroup.position.x, 2, ambulanceGroup.position.z);
-        } else if (cameraView === 'top') {
-          camera.position.set(20, 160, 20);
-          camera.lookAt(20, 0, 20);
+        } else if (currentCameraView === 'top') {
+          camera.position.set(ambulanceGroup.position.x, 140, ambulanceGroup.position.z);
+          camera.lookAt(ambulanceGroup.position.x, 0, ambulanceGroup.position.z);
         } else {
           // Isometric view
           camera.position.set(0, 85, 115);
@@ -432,7 +473,7 @@ export const Simulation3DView: React.FC<Simulation3DViewProps> = ({ activeCaseId
       renderer.dispose();
       scene.clear();
     };
-  }, [is3DMode, webGLSupported, simState, cameraView]);
+  }, [is3DMode, webGLSupported]);
 
   // Simulation Controls
   const handlePlay = async () => {
@@ -633,6 +674,23 @@ export const Simulation3DView: React.FC<Simulation3DViewProps> = ({ activeCaseId
                 title="Top-down overview"
               >
                 Top-Down
+              </button>
+              <button
+                onClick={() => {
+                  setCameraView('follow');
+                  const pos = simState?.ambulancePosition;
+                  if (pos && threeStateRef.current.camera && threeStateRef.current.ambulanceMesh) {
+                    const [ax, , az] = mapTo3D(pos.x, pos.y);
+                    threeStateRef.current.camera.position.set(ax, 38, az + 52);
+                    threeStateRef.current.camera.lookAt(ax, 2, az);
+                  }
+                  showToast('Camera locked onto ambulance');
+                }}
+                className="flex items-center gap-1 px-2.5 py-1 rounded-lg font-medium text-cyan-400 hover:text-cyan-300 hover:bg-slate-700 transition"
+                title="Locate ambulance vehicle in 3D scene"
+              >
+                <Navigation className="w-3.5 h-3.5" />
+                Locate
               </button>
             </div>
           )}

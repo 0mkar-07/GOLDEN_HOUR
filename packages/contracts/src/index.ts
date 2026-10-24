@@ -1,6 +1,7 @@
 export * from './enums.js';
 export * from './health.js';
 export * from './auth.js';
+export * from './region.js';
 export * from './hospital.js';
 export * from './resources.js';
 export * from './case.js';
