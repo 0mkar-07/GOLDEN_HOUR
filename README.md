@@ -59,7 +59,7 @@ flowchart LR
 | Fastify 5 | HTTP API and request hooks | Modular routes and centralized authentication/validation |
 | Zod | Runtime contracts | Validates incoming data beyond TypeScript's compile-time checks |
 | Gemini via `@google/genai` | Optional requirements interpretation and coordinator briefing | Helps interpret narrative input; rule-based fallback keeps the demo usable when unavailable |
-| Deterministic matching and ranking | Agent 2 and Agent 3 | Makes eligibility, timing and exclusions inspectable and reproducible |
+| LOGICAL matching and ranking | Agent 2 and Agent 3 | Makes eligibility, timing and exclusions inspectable and reproducible |
 | Google Maps JavaScript API | Browser geographic map | Displays the ambulance, actual dataset locations and route geometry |
 | Google Routes API | Optional backend road routing | Supplies route distance, travel time and geometry when configured |
 | Simulated routing and SVG | Geographic fallback and 2D teaching visualization | Supports demonstration without requiring live map services |
@@ -70,7 +70,7 @@ flowchart LR
 
 **Current storage model:** the active demo uses the process-local store in `apps/api/src/db/store.ts`. PostgreSQL configuration and SQL migrations exist, but a healthy database connection does not mean all application state is persisted there. Restarting the API reseeds the in-memory demo; do not treat it as durable or multi-instance storage.
 
-**RAG status:** vector database/RAG documents describe proposed work. The current implementation does not require a vector database and should not be presented as an implemented vector-backed RAG pipeline.
+**RAG status:** vector database/RAG documents describe proposed work. The current implementation does not require a vector database.
 
 ## Repository layout
 
@@ -217,7 +217,6 @@ The source is [`nitk_facilities.synthetic.json`](packages/scenario-fixtures/src/
 - **Set Pin** creates a draft origin. Validate and confirm it before recalculation uses the new location.
 - Pin placement is restricted during active transport. It is an origin setup action, not an in-transit diversion control.
 - Confirming a pin clears old recommendation/route displays and requests a new calculation. If refresh fails, the UI reports it rather than retaining an old ranking as current.
-- Google road routing is optional. Simulated graph routes and their access connectors are approximations, not validated road-safe navigation.
 
 ## Agent and dispatch workflow
 
@@ -225,7 +224,7 @@ The source is [`nitk_facilities.synthetic.json`](packages/scenario-fixtures/src/
 
 The ambulance crew enters a presenting complaint, urgency, vital signs and support information. Agent 1 proposes definitive-care needs, immediate stabilization needs and patient-state/pathway information. Missing measurements remain unknown rather than being filled with normal values.
 
-Gemini is an optional interpreter. The source currently configures `gemini-3.5-flash-lite`; availability depends on the configured account. When calls fail or exceed quota, the application falls back to its clinical demonstration rules. An optional LLM briefing is an explanation layer, not the authoritative source of hospital resources.
+Gemini is an interpreter. The source currently configures `gemini-3.5-flash-lite`; availability depends on the configured account. When calls fail or exceed quota, the application falls back to its clinical demonstration rules. An optional LLM briefing is an explanation layer, not the authoritative source of hospital resources.
 
 ### Clinician confirmation
 
@@ -338,7 +337,6 @@ Start with these supporting documents, noting that plans can describe work that 
 - [Patient-state-aware hospital selection plan](docs/codex-patient-state-aware-hospital-selection-plan.md)
 - [NITK dataset rebuild and pin repair plan](docs/nitk-40km-dataset-first-rebuild-and-pin-repair-plan.md)
 - [Map and simulator improvement plan](docs/map-simulator-five-stage-improvement-plan.md)
-- [Git file review and ignore-policy plan](docs/git-push-file-review-and-gitignore-plan.md)
 - [Current hospital demo logins](docs/current-hospital-demo-logins.md)
 
 When contributing, keep shared contracts and their consumers aligned, preserve canonical hospital identities, add focused regression coverage and distinguish synthetic evidence from verified/live data. Commit source, configuration, the lockfile and necessary datasets; exclude real environment files, credentials, dependencies and generated builds. Review the staged diff before publishing.
