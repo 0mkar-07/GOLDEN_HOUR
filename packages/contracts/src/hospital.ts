@@ -225,7 +225,22 @@ export const HospitalSchema = z.object({
   version: z.number().int().positive(),
   updatedAt: z.string(),
 
-  // Extended fields for Stage 2 & 5 Tabular Directory
+  // Extended fields for Stage 2 & 5 Tabular Directory & Stage 3 Operational Overlays
+  operationalProfile: z
+    .enum([
+      'LOW_LOAD_STABILIZATION',
+      'BUSY_EMERGENCY_INTAKE',
+      'SPECIALIST_ON_CALL',
+      'EQUIPMENT_MAINTENANCE',
+      'THEATRE_OCCUPIED',
+      'SERVICE_CLOSED',
+      'STANDARD_BASELINE',
+    ])
+    .default('STANDARD_BASELINE')
+    .optional(),
+  intakeServiceSeconds: z.number().nonnegative().optional(),
+  queueEstimatedWaitSeconds: z.number().nonnegative().optional(),
+  roadAccessPoint: LocationSchema.optional(),
   facilityType: z
     .enum(['hospital', 'medical_college_hospital', 'nursing_home', 'campus_health_center'])
     .default('hospital')

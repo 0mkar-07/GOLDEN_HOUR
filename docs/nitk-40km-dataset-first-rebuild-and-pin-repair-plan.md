@@ -351,8 +351,6 @@ Stages 1–5 are the hospital-dataset milestone. Do not replace them with visual
 
 **Gate:** only intended files/data paths remain active; no missing facility is concealed by a duplicate; all implementation tests have current evidence and the old database remains recoverable until retirement is complete.
 
-## Final acceptance matrix
-
 ## Mandatory implementation specifications
 
 The nine stages above set order and scope. The following details remove ambiguity for implementation. Proposed module names may be adapted to repository conventions, but the invariants and tests must be preserved.

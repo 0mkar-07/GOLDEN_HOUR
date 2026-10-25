@@ -6,14 +6,13 @@ import { useAuth } from '../context/AuthContext';
 import { UserRole } from '@goldenhour/contracts';
 
 export const Header: React.FC = () => {
-  const { user, switchUser, logout, loading } = useAuth();
+  const { user, switchUser, logout, loading, accounts = [] } = useAuth();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const location = useLocation();
 
   const getRoleLabel = () => {
     if (user?.role === UserRole.AMBULANCE) return 'Medic 4 (Ambulance)';
-    if (user?.hospitalId === 'hosp-001') return 'St. Jude Trauma (Hospital A)';
-    if (user?.hospitalId === 'hosp-002') return 'Bayview Community (Hospital B)';
+    if (user?.role === UserRole.HOSPITAL) return accounts.find((a) => a.id === user.id)?.hospitalName || user.name;
     if (user?.role === UserRole.ADMIN) return 'Regional Dispatch Command';
     return 'Paramedic Lead';
   };
@@ -97,25 +96,18 @@ export const Header: React.FC = () => {
               <User className="w-3.5 h-3.5 text-[#176B68]" />
               <select
                 aria-label="Active Demo Role"
-                value={
-                  user?.role === UserRole.AMBULANCE
-                    ? 'paramedic'
-                    : user?.hospitalId === 'hosp-001'
-                    ? 'stjude'
-                    : user?.hospitalId === 'hosp-002'
-                    ? 'bayview'
-                    : user?.role === UserRole.ADMIN
-                    ? 'admin'
-                    : 'paramedic'
-                }
-                onChange={(e) => switchUser(e.target.value as any)}
+                value={user?.email || ''}
+                onChange={(e) => void switchUser(e.target.value).catch(() => {})}
                 disabled={loading}
-                className="bg-transparent text-[#172B2A] font-medium text-xs focus:outline-none cursor-pointer pr-1"
+                title="Demo accounts use password demo123"
+                className="max-w-[240px] bg-transparent text-[#172B2A] font-medium text-xs focus:outline-none cursor-pointer pr-1"
               >
-                <option value="paramedic">Paramedic Lead (Ambulance)</option>
-                <option value="stjude">St. Jude ED (Hospital A)</option>
-                <option value="bayview">Bayview Urgent (Hospital B)</option>
-                <option value="admin">System Dispatcher (Admin)</option>
+                <option value="" disabled>Select demo account</option>
+                {accounts.map((account) => (
+                  <option key={account.id} value={account.email}>
+                    {account.hospitalName || account.name}
+                  </option>
+                ))}
               </select>
 
               {user && (
@@ -192,28 +184,20 @@ export const Header: React.FC = () => {
               <div className="flex items-center gap-2">
                 <select
                   aria-label="Active Demo Role Mobile"
-                  value={
-                    user?.role === UserRole.AMBULANCE
-                      ? 'paramedic'
-                      : user?.hospitalId === 'hosp-001'
-                      ? 'stjude'
-                      : user?.hospitalId === 'hosp-002'
-                      ? 'bayview'
-                      : user?.role === UserRole.ADMIN
-                      ? 'admin'
-                      : 'paramedic'
-                  }
+                  value={user?.email || ''}
                   onChange={(e) => {
-                    switchUser(e.target.value as any);
+                    void switchUser(e.target.value).catch(() => {});
                     setMobileMenuOpen(false);
                   }}
                   disabled={loading}
                   className="w-full bg-[#F6F8F8] border border-[#DCE5E3] text-[#172B2A] font-medium text-xs rounded-lg px-2.5 py-2"
                 >
-                  <option value="paramedic">Paramedic Lead (Ambulance)</option>
-                  <option value="stjude">St. Jude ED (Hospital A)</option>
-                  <option value="bayview">Bayview Urgent (Hospital B)</option>
-                  <option value="admin">System Dispatcher (Admin)</option>
+                  <option value="" disabled>Select demo account</option>
+                {accounts.map((account) => (
+                  <option key={account.id} value={account.email}>
+                    {account.hospitalName || account.name}
+                  </option>
+                ))}
                 </select>
               </div>
               <div className="pt-1">

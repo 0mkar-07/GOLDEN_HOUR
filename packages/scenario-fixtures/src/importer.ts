@@ -13,6 +13,7 @@ import {
 import { z } from 'zod';
 import { createHash } from 'node:crypto';
 import rawData from './data/nitk_facilities.synthetic.json' with { type: 'json' };
+import { applyHospitalOperationalOverlay } from './scenario-overlay.js';
 
 /**
  * Runtime Zod validation schemas for input records (Stage 1 & Stage 3 / F-03)
@@ -354,7 +355,8 @@ export function importNitkFacilities(customFacilities?: unknown[]): {
       },
     };
 
-    hospitals.push(hospDto);
+    const enriched = applyHospitalOperationalOverlay(hospDto);
+    hospitals.push(enriched);
 
     // 7. Explicit Capability-to-Resource Pool Generation (F-04)
     // Non-negative invariant: available <= total, outOfService = 0, externalOccupancy = total - available

@@ -21,7 +21,109 @@ import {
   Radio,
   XCircle,
   ArrowRightLeft,
+  Route,
+  Activity,
 } from 'lucide-react';
+
+export function formatDuration(seconds: number | null | undefined): string {
+  if (seconds === null || seconds === undefined) return 'N/A';
+  if (seconds === 0) return '0m';
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  if (s === 0) return `${m}m`;
+  if (m === 0) return `${s}s`;
+  return `${m}m ${s}s`;
+}
+
+export function formatDistance(meters: number | null | undefined): string {
+  if (meters === null || meters === undefined) return 'N/A';
+  return `${(meters / 1000).toFixed(1)} km`;
+}
+
+export const TimingBreakdownCard: React.FC<{
+  candidate: CandidateEvaluationDto;
+}> = ({ candidate }) => {
+  const [showFormula, setShowFormula] = React.useState(false);
+
+  const roadDist = candidate.roadDistanceMeters;
+  const travelSec = candidate.travelSeconds;
+  const waitSec = candidate.waitAfterArrivalSeconds ?? 0;
+  const intakeSec = candidate.receivingDelaySeconds ?? 0;
+  const careStartSec = candidate.timeToCareSeconds;
+  const limiting = candidate.limitingReason;
+
+  return (
+    <div className="p-3 bg-[#F6F8F8] rounded-xl border border-[#DCE5E3] space-y-2 text-xs">
+      <div className="grid grid-cols-2 gap-y-1.5 gap-x-2 text-[#596B69]">
+        <div className="flex justify-between items-center">
+          <span>Road Distance:</span>
+          <span className="font-semibold text-[#172B2A]">
+            {roadDist ? formatDistance(roadDist) : 'N/A'}
+          </span>
+        </div>
+        <div className="flex justify-between items-center">
+          <span>Travel ETA:</span>
+          <span className="font-bold text-[#237048]">{formatDuration(travelSec)}</span>
+        </div>
+        <div className="flex justify-between items-center">
+          <span>Post-Arrival Wait:</span>
+          <span className={waitSec > 0 ? 'text-[#8A5800] font-bold' : 'text-[#172B2A]'}>
+            {waitSec > 0 ? `+${formatDuration(waitSec)}` : '0m (Immediate)'}
+          </span>
+        </div>
+        <div className="flex justify-between items-center">
+          <span>Intake Delay:</span>
+          <span className="text-[#172B2A]">+{formatDuration(intakeSec)}</span>
+        </div>
+      </div>
+
+      <div className="pt-2 border-t border-[#DCE5E3] flex justify-between items-center text-xs font-bold">
+        <span className="text-[#174C49] flex items-center gap-1">
+          <Clock className="w-3.5 h-3.5 text-[#176B68]" />
+          Estimated Care Start:
+        </span>
+        <span className="text-[#172B2A] text-sm font-extrabold">~{formatDuration(careStartSec)}</span>
+      </div>
+
+      {limiting && (
+        <div className="text-[11px] text-[#596B69] bg-white p-2 rounded-lg border border-[#E2E8F0] flex items-center justify-between">
+          <span className="text-[#8A5800] font-medium truncate" title={limiting}>
+            Limiting factor: {limiting}
+          </span>
+          <button
+            type="button"
+            onClick={() => setShowFormula(!showFormula)}
+            className="text-[10px] text-[#176B68] hover:underline shrink-0 ml-1 font-semibold"
+          >
+            {showFormula ? 'Hide' : 'Explain'}
+          </button>
+        </div>
+      )}
+
+      {showFormula && (
+        <div className="p-2 bg-white rounded-lg border border-[#DCE5E3] text-[10px] font-mono text-[#596B69] space-y-0.5">
+          <div className="text-[#174C49] font-bold">Time-to-Care Formula:</div>
+          <div>Care Start = max(Travel ETA, Service Ready) + Intake</div>
+          <div>= max({travelSec}s, {travelSec + waitSec}s) + {intakeSec}s</div>
+          <div>= {careStartSec}s (~{formatDuration(careStartSec)})</div>
+        </div>
+      )}
+
+      <div className="flex justify-between items-center pt-1 text-[10px] text-[#596B69]">
+        <span>Routing Provider:</span>
+        <span className="font-semibold px-2 py-0.5 rounded bg-white border border-[#DCE5E3] text-[#172B2A]">
+          {candidate.routingSource === 'GOOGLE_ROUTES'
+            ? 'Google Routes (Live)'
+            : candidate.routingSource === 'LIVE_OSRM'
+            ? 'Live OSRM'
+            : candidate.routingSource === 'FALLBACK_GRAPH'
+            ? 'Fallback Graph'
+            : 'Simulated Road Graph'}
+        </span>
+      </div>
+    </div>
+  );
+};
 
 interface RecommendationPanelProps {
   recommendation: RecommendationDto | null;
@@ -56,7 +158,7 @@ export const RecommendationPanel: React.FC<RecommendationPanelProps> = ({
         <Sparkles className="w-8 h-8 text-[#176B68] mx-auto" />
         <h3 className="font-bold text-[#172B2A] text-base">Destination Recommendation Standby</h3>
         <p className="text-xs text-[#596B69] max-w-md mx-auto">
-          Confirm patient clinical requirements above to run Agent 2 (Suitability Filtering) and Agent 3 (Time & Coordination Ranking).
+          Confirm patient clinical requirements above to run Agent 2 (Suitability Filtering) and Agent 3 (Time &amp; Coordination Ranking).
         </p>
         <button
           onClick={onRefresh}
@@ -75,26 +177,65 @@ export const RecommendationPanel: React.FC<RecommendationPanelProps> = ({
   return (
     <div className="space-y-4">
       {/* Top Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
         <div>
           <h2 className="text-base font-bold text-[#172B2A] flex items-center gap-2">
             <Navigation className="w-5 h-5 text-[#176B68]" />
             Tri-Agent Destination Recommendations
           </h2>
           <p className="text-xs text-[#596B69] mt-0.5">
-            Agent 2 (Verified Capabilities & Surgical Teams) + Agent 3 (Time-to-Care Dynamic Ranking)
+            Agent 2 (Verified Capabilities &amp; Surgical Teams) + Agent 3 (Time-to-Care Dynamic Ranking)
           </p>
         </div>
 
-        <button
-          onClick={onRefresh}
-          disabled={loading}
-          className="px-3 py-1.5 bg-white border border-[#DCE5E3] hover:bg-[#F6F8F8] text-[#172B2A] text-xs font-semibold rounded-lg shadow-xs transition flex items-center gap-1.5"
-        >
-          <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
-          Recalculate
-        </button>
+        <div className="flex items-center gap-2 self-start sm:self-auto">
+          {recommendation.evaluationMode && (
+            <span
+              className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase tracking-wider border ${
+                recommendation.evaluationMode === 'LLM_ASSISTED'
+                  ? 'bg-[#EAF5F2] text-[#176B68] border-[#DCE5E3]'
+                  : recommendation.evaluationMode === 'WAITING_FOR_DATA'
+                  ? 'bg-[#FFF8E6] text-[#8A5800] border-[#F3E5AB]'
+                  : 'bg-gray-100 text-gray-700 border-gray-200'
+              }`}
+            >
+              {recommendation.evaluationMode}
+            </span>
+          )}
+
+          {recommendation.routeSnapshotId && (
+            <span className="text-[10px] font-mono text-[#596B69] hidden md:inline px-1.5 py-0.5 bg-[#F6F8F8] rounded border border-[#DCE5E3]">
+              {recommendation.routeSnapshotId.slice(0, 16)}...
+            </span>
+          )}
+
+          <button
+            onClick={onRefresh}
+            disabled={loading}
+            className="px-3 py-1.5 bg-white border border-[#DCE5E3] hover:bg-[#F6F8F8] text-[#172B2A] text-xs font-semibold rounded-lg shadow-xs transition flex items-center gap-1.5"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+            Recalculate
+          </button>
+        </div>
       </div>
+
+      {/* Why This Recommendation Changed Banner */}
+      {recommendation.whyChanged && (
+        <div className="p-3.5 bg-[#EFF8FF] border border-[#B2DDFF] rounded-xl flex items-start gap-3 shadow-xs">
+          <div className="p-1.5 bg-white rounded-lg border border-[#B2DDFF] text-[#175CD3] shrink-0 mt-0.5">
+            <Info className="w-4 h-4" />
+          </div>
+          <div className="space-y-0.5">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-[#175CD3]">
+              Why Recommendation Changed
+            </span>
+            <p className="text-xs text-[#182230] leading-relaxed font-medium">
+              {recommendation.whyChanged}
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* AI Dispatch Coordinator Live Briefing Banner */}
       {recommendation.coordinatorBriefing && (
@@ -218,31 +359,8 @@ export const RecommendationPanel: React.FC<RecommendationPanelProps> = ({
                   </div>
                 </div>
 
-                {/* Time Breakdown Card */}
-                <div className="p-3 bg-[#F6F8F8] rounded-xl border border-[#DCE5E3] space-y-1.5 text-xs">
-                  <div className="flex justify-between items-center text-[#596B69]">
-                    <span>Current Road Drive ETA:</span>
-                    <span className="text-[#237048] font-bold">~{Math.round(hospitalB.travelSeconds / 60)} mins</span>
-                  </div>
-                  <div className="flex justify-between items-center text-[#596B69]">
-                    <span>Intake / Receiving Delay:</span>
-                    <span className="text-[#172B2A]">+{Math.round(hospitalB.receivingDelaySeconds / 60)} mins</span>
-                  </div>
-                  <div className="flex justify-between items-center pt-1.5 border-t border-[#DCE5E3] text-xs font-bold">
-                    <span className="text-[#174C49]">Estimated Care Start:</span>
-                    <span className="text-[#172B2A]">~{Math.round(hospitalB.timeToCareSeconds / 60)} mins</span>
-                  </div>
-                  <div className="flex justify-between items-center pt-1 text-[10px] text-[#596B69]">
-                    <span>Routing Engine:</span>
-                    <span className="font-semibold text-[#172B2A]">
-                      {hospitalB.routingSource === 'GOOGLE_ROUTES'
-                        ? 'Google Routes API'
-                        : hospitalB.routingSource === 'LIVE_OSRM'
-                        ? 'Live OSRM'
-                        : 'Simulated Road Graph'}
-                    </span>
-                  </div>
-                </div>
+                {/* 5-Component Timing Breakdown Card */}
+                <TimingBreakdownCard candidate={hospitalB} />
 
                 {/* Unmet Full-Care Limitations */}
                 <div className="text-xs space-y-1">
@@ -322,31 +440,8 @@ export const RecommendationPanel: React.FC<RecommendationPanelProps> = ({
                   </div>
                 </div>
 
-                {/* Time Breakdown Card */}
-                <div className="p-3 bg-[#F6F8F8] rounded-xl border border-[#DCE5E3] space-y-1.5 text-xs">
-                  <div className="flex justify-between items-center text-[#596B69]">
-                    <span>Current Road Drive ETA:</span>
-                    <span className="text-[#237048] font-bold">~{Math.round(hospitalC.travelSeconds / 60)} mins</span>
-                  </div>
-                  <div className="flex justify-between items-center text-[#596B69]">
-                    <span>Intake / Receiving Delay:</span>
-                    <span className="text-[#172B2A]">+{Math.round(hospitalC.receivingDelaySeconds / 60)} mins</span>
-                  </div>
-                  <div className="flex justify-between items-center pt-1.5 border-t border-[#DCE5E3] text-xs font-bold">
-                    <span className="text-[#596B69]">Time to Care:</span>
-                    <span className="text-[#172B2A]">~{Math.round(hospitalC.timeToCareSeconds / 60)} mins</span>
-                  </div>
-                  <div className="flex justify-between items-center pt-1 text-[10px] text-[#596B69]">
-                    <span>Routing:</span>
-                    <span className="font-semibold text-[#172B2A]">
-                      {hospitalC.routingSource === 'GOOGLE_ROUTES'
-                        ? 'Google Routes API'
-                        : hospitalC.routingSource === 'LIVE_OSRM'
-                        ? 'Live OSRM'
-                        : 'Simulated Road Graph'}
-                    </span>
-                  </div>
-                </div>
+                {/* 5-Component Timing Breakdown Card */}
+                <TimingBreakdownCard candidate={hospitalC} />
 
                 {/* Unmet Full-Care Limitations */}
                 <div className="text-xs space-y-1">
@@ -416,31 +511,8 @@ export const RecommendationPanel: React.FC<RecommendationPanelProps> = ({
                     </div>
                   </div>
 
-                  {/* Time Breakdown Card */}
-                  <div className="p-3 bg-[#F6F8F8] rounded-xl border border-[#DCE5E3] space-y-1.5 text-xs">
-                    <div className="flex justify-between items-center text-[#596B69]">
-                      <span>Road Transit ETA:</span>
-                      <span className="text-[#172B2A] font-bold">~{Math.round(hospitalA.travelSeconds / 60)} mins</span>
-                    </div>
-                    <div className="flex justify-between items-center text-[#596B69]">
-                      <span>Intake / Receiving Delay:</span>
-                      <span className="text-[#172B2A]">+{Math.round(hospitalA.receivingDelaySeconds / 60)} mins</span>
-                    </div>
-                    <div className="flex justify-between items-center pt-1.5 border-t border-[#DCE5E3] text-sm font-bold">
-                      <span className="text-[#174C49]">Estimated Care Start:</span>
-                      <span className="text-[#237048]">~{Math.round(hospitalA.timeToCareSeconds / 60)} mins</span>
-                    </div>
-                    <div className="flex justify-between items-center pt-1 text-[11px] text-[#596B69]">
-                      <span>Routing Engine:</span>
-                      <span className="font-semibold text-[#172B2A]">
-                        {hospitalA.routingSource === 'GOOGLE_ROUTES'
-                          ? 'Google Routes API'
-                          : hospitalA.routingSource === 'LIVE_OSRM'
-                          ? 'Live OSRM Router'
-                          : 'Simulated Road Graph'}
-                      </span>
-                    </div>
-                  </div>
+                  {/* 5-Component Timing Breakdown Card */}
+                  <TimingBreakdownCard candidate={hospitalA} />
 
                   {/* Rationale */}
                   <div className="text-xs text-[#596B69] space-y-1">
@@ -531,27 +603,8 @@ export const RecommendationPanel: React.FC<RecommendationPanelProps> = ({
                     </div>
                   </div>
 
-                  {/* Time Breakdown Card */}
-                  <div className="p-3 bg-[#F6F8F8] rounded-xl border border-[#DCE5E3] space-y-1.5 text-xs">
-                    <div className="flex justify-between items-center text-[#596B69]">
-                      <span>Current-Position ETA:</span>
-                      <span className="text-[#237048] font-bold">~{Math.round(hospitalB.travelSeconds / 60)} mins</span>
-                    </div>
-                    <div className="flex justify-between items-center pt-1.5 border-t border-[#DCE5E3] text-xs font-bold">
-                      <span className="text-[#596B69]">Time to Care:</span>
-                      <span className="text-[#172B2A]">~{Math.round(hospitalB.timeToCareSeconds / 60)} mins</span>
-                    </div>
-                    <div className="flex justify-between items-center pt-1 text-[10px] text-[#596B69]">
-                      <span>Routing:</span>
-                      <span className="font-semibold text-[#172B2A]">
-                        {hospitalB.routingSource === 'GOOGLE_ROUTES'
-                          ? 'Google Routes API'
-                          : hospitalB.routingSource === 'LIVE_OSRM'
-                          ? 'Live OSRM'
-                          : 'Simulated Road Graph'}
-                      </span>
-                    </div>
-                  </div>
+                  {/* 5-Component Timing Breakdown Card */}
+                  <TimingBreakdownCard candidate={hospitalB} />
 
                   {/* Limitations */}
                   <div className="text-xs space-y-1">
@@ -618,27 +671,8 @@ export const RecommendationPanel: React.FC<RecommendationPanelProps> = ({
                     </div>
                   </div>
 
-                  {/* Time Breakdown Card */}
-                  <div className="p-3 bg-[#F6F8F8] rounded-xl border border-[#DCE5E3] space-y-1.5 text-xs">
-                    <div className="flex justify-between items-center text-[#596B69]">
-                      <span>Current-Position ETA:</span>
-                      <span className="text-[#237048] font-bold">~{Math.round(hospitalC.travelSeconds / 60)} mins</span>
-                    </div>
-                    <div className="flex justify-between items-center pt-1.5 border-t border-[#DCE5E3] text-xs font-bold">
-                      <span className="text-[#596B69]">Time to Care:</span>
-                      <span className="text-[#172B2A]">~{Math.round(hospitalC.timeToCareSeconds / 60)} mins</span>
-                    </div>
-                    <div className="flex justify-between items-center pt-1 text-[10px] text-[#596B69]">
-                      <span>Routing:</span>
-                      <span className="font-semibold text-[#172B2A]">
-                        {hospitalC.routingSource === 'GOOGLE_ROUTES'
-                          ? 'Google Routes API'
-                          : hospitalC.routingSource === 'LIVE_OSRM'
-                          ? 'Live OSRM'
-                          : 'Simulated Road Graph'}
-                      </span>
-                    </div>
-                  </div>
+                  {/* 5-Component Timing Breakdown Card */}
+                  <TimingBreakdownCard candidate={hospitalC} />
 
                   {/* Limitations */}
                   <div className="text-xs space-y-1">
@@ -698,7 +732,7 @@ export const RecommendationPanel: React.FC<RecommendationPanelProps> = ({
           <div className="p-3.5 bg-[#F6F8F8] rounded-xl border border-[#DCE5E3] space-y-1">
             <span className="font-bold text-[#174C49]">Agent 1 — Requirements</span>
             <p className="text-[#596B69] leading-relaxed text-[11px]">
-              Synthesizes patient vitals & telemetry into confirmed full-care and immediate stabilization criteria.
+              Synthesizes patient vitals &amp; telemetry into confirmed full-care and immediate stabilization criteria.
             </p>
           </div>
 
@@ -710,9 +744,9 @@ export const RecommendationPanel: React.FC<RecommendationPanelProps> = ({
           </div>
 
           <div className="p-3.5 bg-[#F6F8F8] rounded-xl border border-[#DCE5E3] space-y-1">
-            <span className="font-bold text-[#237048]">Agent 3 — Coordination & Time</span>
+            <span className="font-bold text-[#237048]">Agent 3 — Coordination &amp; Time</span>
             <p className="text-[#596B69] leading-relaxed text-[11px]">
-              Calculates shortest road path & time-to-care to select Primary Destination A and current-position Backups B &amp; C.
+              Calculates shortest road path &amp; time-to-care to select Primary Destination A and current-position Backups B &amp; C.
             </p>
           </div>
         </div>
@@ -723,10 +757,14 @@ export const RecommendationPanel: React.FC<RecommendationPanelProps> = ({
               <thead>
                 <tr className="border-b border-[#DCE5E3] text-[11px] font-semibold text-[#596B69] bg-[#F6F8F8]">
                   <th className="py-2 px-3">Hospital</th>
-                  <th className="py-2 px-3">Definitive Status</th>
-                  <th className="py-2 px-3">Transit ETA</th>
-                  <th className="py-2 px-3">Time-to-Care</th>
-                  <th className="py-2 px-3">Suitability</th>
+                  <th className="py-2 px-3">Status</th>
+                  <th className="py-2 px-3">Road Dist</th>
+                  <th className="py-2 px-3">Travel ETA</th>
+                  <th className="py-2 px-3">Post-Arrival Wait</th>
+                  <th className="py-2 px-3">Intake</th>
+                  <th className="py-2 px-3">Care Start</th>
+                  <th className="py-2 px-3">Limiting Factor</th>
+                  <th className="py-2 px-3">Routing Engine</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#DCE5E3]">
@@ -746,9 +784,35 @@ export const RecommendationPanel: React.FC<RecommendationPanelProps> = ({
                         {cand.eligible ? 'Eligible' : 'Ineligible'}
                       </span>
                     </td>
-                    <td className="py-2 px-3 text-[#596B69]">~{Math.round(cand.travelSeconds / 60)}m</td>
-                    <td className="py-2 px-3 font-bold text-[#172B2A]">~{Math.round(cand.timeToCareSeconds / 60)}m</td>
-                    <td className="py-2 px-3 font-semibold text-[#174C49]">{cand.readiness}</td>
+                    <td className="py-2 px-3 text-[#596B69]">
+                      {formatDistance(cand.roadDistanceMeters)}
+                    </td>
+                    <td className="py-2 px-3 text-[#237048] font-medium">
+                      ~{formatDuration(cand.travelSeconds)}
+                    </td>
+                    <td className="py-2 px-3 text-[#596B69]">
+                      {(cand.waitAfterArrivalSeconds ?? 0) > 0 ? `+${formatDuration(cand.waitAfterArrivalSeconds)}` : '0m'}
+                    </td>
+                    <td className="py-2 px-3 text-[#596B69]">
+                      +{formatDuration(cand.receivingDelaySeconds)}
+                    </td>
+                    <td className="py-2 px-3 font-bold text-[#172B2A]">
+                      ~{formatDuration(cand.timeToCareSeconds)}
+                    </td>
+                    <td className="py-2 px-3 text-[11px] text-[#8A5800] max-w-[150px] truncate" title={cand.limitingReason || 'Standard facility intake'}>
+                      {cand.limitingReason || 'Standard facility intake'}
+                    </td>
+                    <td className="py-2 px-3 text-[10px] text-[#596B69]">
+                      <span className="px-1.5 py-0.5 rounded bg-[#F6F8F8] border border-[#DCE5E3]">
+                        {cand.routingSource === 'GOOGLE_ROUTES'
+                          ? 'Google Routes'
+                          : cand.routingSource === 'LIVE_OSRM'
+                          ? 'OSRM'
+                          : cand.routingSource === 'FALLBACK_GRAPH'
+                          ? 'Fallback'
+                          : 'Sim Graph'}
+                      </span>
+                    </td>
                   </tr>
                 ))}
               </tbody>

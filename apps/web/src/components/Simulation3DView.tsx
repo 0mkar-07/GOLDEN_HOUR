@@ -542,7 +542,7 @@ export const Simulation3DView: React.FC<Simulation3DViewProps> = ({ activeCaseId
     try {
       await apiClient.injectHospitalSurgeScenario('hosp-001');
       fetchState();
-      showToast('Hospital intake surge (+15m delay) injected at St. Jude / A.J. Hospital');
+      showToast('Hospital intake surge (+15m delay) injected at A.J. Hospital and Research Centre');
     } catch (err: any) {
       showToast(`Error: ${err.message}`);
     }
@@ -745,11 +745,11 @@ export const Simulation3DView: React.FC<Simulation3DViewProps> = ({ activeCaseId
                 const isHosp = node.id.includes('hosp');
                 const label =
                   node.id === 'node-hosp-a'
-                    ? 'A: St. Jude'
+                    ? 'A.J. Hospital'
                     : node.id === 'node-hosp-b'
-                    ? 'B: Bayview'
+                    ? 'Padmavathi Hospital'
                     : node.id === 'node-hosp-c'
-                    ? 'C: Northpoint'
+                    ? 'Srinivas Hospital'
                     : node.label;
                 return (
                   <g key={node.id} transform={`translate(${node.x}, ${node.y})`}>
@@ -868,7 +868,7 @@ export const Simulation3DView: React.FC<Simulation3DViewProps> = ({ activeCaseId
           className="flex items-center justify-center gap-1.5 px-3 py-2 bg-slate-800/80 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-xl text-xs font-medium transition"
         >
           <AlertTriangle className="w-3.5 h-3.5 text-purple-400" />
-          Inject St. Jude ED Surge (+15m)
+          Inject A.J. Hospital ED Surge (+15m)
         </button>
 
         <button

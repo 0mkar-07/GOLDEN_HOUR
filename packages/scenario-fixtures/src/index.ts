@@ -1,3 +1,4 @@
+import { IMPORTED_NITK_DATASET } from './importer.js';
 import {
   UserRole,
   ReceivingStatus,
@@ -440,26 +441,6 @@ export const SEEDED_USERS: SeedUserWithSecret[] = [
     createdAt: new Date('2026-10-24T08:00:00Z').toISOString(),
   },
   {
-    id: 'user-hosp-a-001',
-    email: 'stjude_admin@goldenhour.test',
-    passwordCleartext: 'demo123',
-    name: 'Dr. Sarah Vance, St. Jude ED Coordinator',
-    role: UserRole.HOSPITAL,
-    hospitalId: 'hosp-001',
-    active: true,
-    createdAt: new Date('2026-10-24T08:00:00Z').toISOString(),
-  },
-  {
-    id: 'user-hosp-b-001',
-    email: 'bayview_admin@goldenhour.test',
-    passwordCleartext: 'demo123',
-    name: 'Nurse Manager Marcus Reed, Bayview Urgent',
-    role: UserRole.HOSPITAL,
-    hospitalId: 'hosp-002',
-    active: true,
-    createdAt: new Date('2026-10-24T08:00:00Z').toISOString(),
-  },
-  {
     id: 'user-admin-001',
     email: 'admin@goldenhour.test',
     passwordCleartext: 'demo123',
@@ -468,6 +449,16 @@ export const SEEDED_USERS: SeedUserWithSecret[] = [
     active: true,
     createdAt: new Date('2026-10-24T08:00:00Z').toISOString(),
   },
+  ...IMPORTED_NITK_DATASET.hospitals.map((hospital): SeedUserWithSecret => ({
+    id: `user-${hospital.id}`,
+    email: `${hospital.id.replace('nitk:', '').toLowerCase()}@goldenhour.test`,
+    passwordCleartext: 'demo123',
+    name: `${hospital.name} Coordinator`,
+    role: UserRole.HOSPITAL,
+    hospitalId: hospital.id,
+    active: true,
+    createdAt: '2026-10-25T00:00:00.000Z',
+  })),
 ];
 
 /**
@@ -489,4 +480,5 @@ export const SEEDED_AMBULANCE = {
 };
 
 export * from './importer.js';
+export * from './scenario-overlay.js';
 

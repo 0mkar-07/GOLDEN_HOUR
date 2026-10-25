@@ -123,8 +123,8 @@ describe('Phase 10 — Simulation 3D Digital Twin Component', () => {
     expect(screen.getByText(/15s elapsed/i)).toBeInTheDocument();
 
     // Verify hospital nodes rendered
-    expect(screen.getByText('A: St. Jude')).toBeInTheDocument();
-    expect(screen.getByText('B: Bayview')).toBeInTheDocument();
+    expect(screen.getByText('A.J. Hospital')).toBeInTheDocument();
+    expect(screen.getByText('Padmavathi Hospital')).toBeInTheDocument();
   });
 
   it('executes simulation play, pause, and step controls', async () => {
@@ -163,7 +163,7 @@ describe('Phase 10 — Simulation 3D Digital Twin Component', () => {
     });
 
     // Surge injection button
-    const surgeBtn = screen.getByRole('button', { name: /Inject St\. Jude ED Surge/i });
+    const surgeBtn = screen.getByRole('button', { name: /Inject A\.J\. Hospital ED Surge/i });
     fireEvent.click(surgeBtn);
 
     await waitFor(() => {

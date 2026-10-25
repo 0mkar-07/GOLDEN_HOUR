@@ -23,7 +23,7 @@ export function useHospitalDirectory(): UseHospitalDirectoryResult {
 
   const fetchHospitals = useCallback(async () => {
     // If auth is still loading, wait
-    if (authLoading) return;
+    if (authLoading || !user) return;
 
     const currentGen = ++generationRef.current;
     setLoading(true);
@@ -48,11 +48,14 @@ export function useHospitalDirectory(): UseHospitalDirectoryResult {
         setLoading(false);
       }
     }
-  }, [authLoading]);
+  }, [authLoading, user?.id]);
 
   // Refetch whenever user ID or auth status changes
   useEffect(() => {
+    setHospitals([]);
+    if (!user) { setLoading(false); setStatus('idle'); }
     fetchHospitals();
+    return () => { generationRef.current += 1; };
   }, [user?.id, authLoading, fetchHospitals]);
 
   return {

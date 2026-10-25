@@ -80,6 +80,8 @@ class GoldenHourDatabaseStore {
   public scheduledProcedures: Map<string, ScheduledProcedureDto> = new Map();
   public serviceHours: Map<string, ServiceHoursDto[]> = new Map();
   public emergencyPriorityTickets: Map<string, EmergencyPriorityTicketDto> = new Map();
+  public caseRouteSnapshots: Map<string, any> = new Map();
+  public recommendationDiagnostics: Map<string, any> = new Map();
   public trafficOverrides: Record<string, number> = {};
   public ambulancePosition: {
     ambulanceId: string;
@@ -161,28 +163,8 @@ class GoldenHourDatabaseStore {
     for (const pool of IMPORTED_NITK_DATASET.resourcePools) {
       this.resourcePools.set(pool.id, { ...pool });
     }
-    for (const pool of SEEDED_RESOURCE_POOLS) {
-      const canonicalHospId = this.resolveHospitalId(pool.hospitalId);
-      const mappedId = `pool-legacy-${pool.id}-${canonicalHospId}`;
-      if (!this.resourcePools.has(mappedId)) {
-        this.resourcePools.set(mappedId, {
-          ...pool,
-          id: mappedId,
-          hospitalId: canonicalHospId,
-        });
-      }
-    }
-
     // 4. Seed Staff Availability
     this.staffAvailability.clear();
-    for (const staff of SEEDED_STAFF_AVAILABILITY) {
-      const canonicalHospId = this.resolveHospitalId(staff.hospitalId);
-      this.staffAvailability.set(staff.id, {
-        ...staff,
-        hospitalId: canonicalHospId,
-      });
-    }
-
     // Seed staff for major NITK hospitals so specialists exist across the 23 facilities
     for (const hosp of IMPORTED_NITK_DATASET.hospitals) {
       if (hosp.capabilities.includes('TRAUMA_L1') || hosp.facilityType === 'medical_college_hospital') {
@@ -215,6 +197,9 @@ class GoldenHourDatabaseStore {
       }
     }
 
+    // Retire obsolete demo identities; current accounts are keyed to source facilities.
+    this.users.delete('user-hosp-a-001');
+    this.users.delete('user-hosp-b-001');
     // 5. Seed Users with Scrypt Hashed Passwords
     for (const u of SEEDED_USERS) {
       const existing = Array.from(this.users.values()).find((user) => user.email === u.email);
@@ -240,50 +225,6 @@ class GoldenHourDatabaseStore {
     for (const ot of IMPORTED_NITK_DATASET.operatingTheatres) {
       this.operatingTheatres.set(ot.id, { ...ot });
     }
-    // Also include default demo theatres mapped to canonical IDs
-    const demoTheatres: OperatingTheatreDto[] = [
-      {
-        id: 'ot-001-1',
-        hospitalId: this.resolveHospitalId('hosp-001'),
-        name: 'OR-1 Major Trauma & Neurosurgery Suite',
-        capabilities: ['TRAUMA_L1', 'NEUROSURGERY', 'ICU'],
-        active: true,
-      },
-      {
-        id: 'ot-001-2',
-        hospitalId: this.resolveHospitalId('hosp-001'),
-        name: 'OR-2 General Emergency & Laparoscopic Theatre',
-        capabilities: ['STABILIZATION', 'EMERGENCY_DEPT'],
-        active: true,
-      },
-      {
-        id: 'ot-001-3',
-        hospitalId: this.resolveHospitalId('hosp-001'),
-        name: 'OR-3 Cardiac Cath & Vascular Intervention Suite',
-        capabilities: ['CARDIAC_CATH', 'ICU'],
-        active: true,
-      },
-      {
-        id: 'ot-002-1',
-        hospitalId: this.resolveHospitalId('hosp-002'),
-        name: 'Surathkal Resuscitation & Urgent Surgical Room',
-        capabilities: ['STABILIZATION', 'EMERGENCY_DEPT'],
-        active: true,
-      },
-      {
-        id: 'ot-003-1',
-        hospitalId: this.resolveHospitalId('hosp-003'),
-        name: 'Mukka Multi-Specialty Surgical Theatre',
-        capabilities: ['STABILIZATION', 'VENTILATORS', 'ICU'],
-        active: true,
-      },
-    ];
-    for (const ot of demoTheatres) {
-      if (!this.operatingTheatres.has(ot.id)) {
-        this.operatingTheatres.set(ot.id, ot);
-      }
-    }
-
     // 7. Seed Service Hours (F-05)
     this.serviceHours.clear();
     for (const [hospId, hours] of IMPORTED_NITK_DATASET.serviceHours.entries()) {
@@ -297,7 +238,7 @@ class GoldenHourDatabaseStore {
         {
           id: 'proc-101',
           hospitalId: this.resolveHospitalId('hosp-001'),
-          theatreId: 'ot-001-1',
+          theatreId: IMPORTED_NITK_DATASET.operatingTheatres.filter((ot) => ot.hospitalId === this.resolveHospitalId('hosp-001'))[0].id,
           caseType: 'ELECTIVE',
           procedureName: 'Elective Laparoscopic Inguinal Hernia Repair',
           status: 'SCHEDULED',
@@ -305,13 +246,13 @@ class GoldenHourDatabaseStore {
           plannedEnd: new Date(now + 75 * 60 * 1000).toISOString(),
           turnoverMinutes: 20,
           deferralEligibility: 'ELIGIBLE_FOR_REVIEW',
-          clinicianInCharge: 'Dr. Ramesh Shenoy (General Surgery)',
+          clinicianInCharge: 'Demo General Surgery Team',
           version: 1,
         },
         {
           id: 'proc-102',
           hospitalId: this.resolveHospitalId('hosp-001'),
-          theatreId: 'ot-001-2',
+          theatreId: IMPORTED_NITK_DATASET.operatingTheatres.filter((ot) => ot.hospitalId === this.resolveHospitalId('hosp-001'))[1].id,
           caseType: 'URGENT',
           procedureName: 'Acute Appendectomy with Peritonitis',
           status: 'IN_PROGRESS',
@@ -320,13 +261,13 @@ class GoldenHourDatabaseStore {
           actualStart: new Date(now - 38 * 60 * 1000).toISOString(),
           turnoverMinutes: 20,
           deferralEligibility: 'PROTECTED_IN_PROGRESS',
-          clinicianInCharge: 'Dr. Preethi Rao (Emergency Surgery)',
+          clinicianInCharge: 'Demo Emergency Surgery Team',
           version: 1,
         },
         {
           id: 'proc-103',
           hospitalId: this.resolveHospitalId('hosp-002'),
-          theatreId: 'ot-002-1',
+          theatreId: IMPORTED_NITK_DATASET.operatingTheatres.find((ot) => ot.hospitalId === this.resolveHospitalId('hosp-002'))!.id,
           caseType: 'ELECTIVE',
           procedureName: 'Minor Soft Tissue Excision',
           status: 'SCHEDULED',
@@ -334,7 +275,7 @@ class GoldenHourDatabaseStore {
           plannedEnd: new Date(now + 60 * 60 * 1000).toISOString(),
           turnoverMinutes: 15,
           deferralEligibility: 'ELIGIBLE_FOR_REVIEW',
-          clinicianInCharge: 'Dr. Sandeep Kumar (Urgent Care)',
+          clinicianInCharge: 'Demo Urgent Care Team',
           version: 1,
         },
       ];
@@ -370,15 +311,10 @@ class GoldenHourDatabaseStore {
     if (!hosp && REVERSE_CROSSWALK[id]) {
       hosp = this.hospitals.get(REVERSE_CROSSWALK[id]);
     }
-    if (!hosp) {
-      hosp = Array.from(this.hospitals.values()).find(
-        (h) => h.code === id || h.code === `NITK-${id}` || h.name.toLowerCase().includes(id.toLowerCase())
-      );
-    }
     return hosp;
   }
 
-  public useImportedDataset = false;
+  public useImportedDataset = true;
 
   public enableImportedDataset(enable: boolean = true) {
     this.useImportedDataset = enable;
@@ -429,205 +365,74 @@ class GoldenHourDatabaseStore {
   };
 
   public previewAmbulanceOrigin(
-    lat: number,
-    lng: number,
-    expectedRunVersion?: number,
-    clientRequestId?: string
+    lat: number, lng: number, expectedRunVersion?: number, clientRequestId?: string,
+    roadAccess?: { lat: number; lng: number; source: string },
   ): OriginPreviewResponse {
-    const distFromNitk = calculateHaversineDistanceMeters(
-      NITK_REGION.centerLat,
-      NITK_REGION.centerLng,
-      lat,
-      lng
-    );
-
-    const withinRegion = isWithinNitkRegion(lat, lng);
-
-    let nearestNode = SEEDED_ROAD_GRAPH.nodes[0];
-    let minDistance = Infinity;
-    for (const node of SEEDED_ROAD_GRAPH.nodes) {
-      const d = calculateHaversineDistanceMeters(lat, lng, node.lat, node.lng);
-      if (d < minDistance) {
-        minDistance = d;
-        nearestNode = node;
-      }
+    const point = projectToNitkMetric(lat, lng);
+    let resolved: { lat: number; lng: number } | null = roadAccess ?? null;
+    let distance = roadAccess ? calculateHaversineDistanceMeters(lat, lng, roadAccess.lat, roadAccess.lng) : Infinity;
+    let segmentId = roadAccess?.source ?? '';
+    let fraction = 0;
+    // Offline demo fallback: project onto segments, not just the handful of junctions.
+    if (!roadAccess) for (const edge of SEEDED_ROAD_GRAPH.edges) {
+      const a = SEEDED_ROAD_GRAPH.nodes.find((n) => n.id === edge.from);
+      const b = SEEDED_ROAD_GRAPH.nodes.find((n) => n.id === edge.to);
+      if (!a || !b) continue;
+      const pa = projectToNitkMetric(a.lat, a.lng), pb = projectToNitkMetric(b.lat, b.lng);
+      const dx = pb.x - pa.x, dy = pb.y - pa.y;
+      const lengthSquared = dx * dx + dy * dy;
+      if (!lengthSquared) continue;
+      const t = Math.max(0, Math.min(1, ((point.x - pa.x) * dx + (point.y - pa.y) * dy) / lengthSquared));
+      const candidate = { lat: a.lat + t * (b.lat - a.lat), lng: a.lng + t * (b.lng - a.lng) };
+      const d = calculateHaversineDistanceMeters(lat, lng, candidate.lat, candidate.lng);
+      if (d < distance) { distance = d; resolved = candidate; segmentId = edge.id; fraction = t; }
     }
-
-    const validationId = `val-${Math.random().toString(36).substring(2, 9)}`;
-    const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
-
-    if (!withinRegion) {
-      const preview: OriginPreviewResponse = {
-        clientRequestId,
-        validationId,
-        expiresAt,
-        runId: this.simulationRun.id,
-        runVersion: this.simulationRun.runVersion,
-        regionVersion: NITK_REGION.datasetVersion,
-        graphVersion: '2026.10-nitk-graph',
-        requested: { lat, lng },
-        resolved: null,
-        snapDistanceMeters: Math.round(minDistance),
-        distanceFromNitkKm: parseFloat((distFromNitk / 1000).toFixed(2)),
-        validationStatus: 'REJECTED',
-        rejectionCode: 'OUT_OF_REGION',
-        rejectionReason: `Coordinates are ${(distFromNitk / 1000).toFixed(1)}km from NITK, exceeding the 40 km regional boundary.`,
-      };
-      this.originPreviews.set(validationId, preview);
-      return preview;
-    }
-
-    if (minDistance > 150) {
-      const preview: OriginPreviewResponse = {
-        clientRequestId,
-        validationId,
-        expiresAt,
-        runId: this.simulationRun.id,
-        runVersion: this.simulationRun.runVersion,
-        regionVersion: NITK_REGION.datasetVersion,
-        graphVersion: '2026.10-nitk-graph',
-        requested: { lat, lng },
-        resolved: null,
-        snapDistanceMeters: Math.round(minDistance),
-        distanceFromNitkKm: parseFloat((distFromNitk / 1000).toFixed(2)),
-        validationStatus: 'REJECTED',
-        rejectionCode: 'NO_ROAD_ACCESS',
-        rejectionReason: `Selected point is ${Math.round(minDistance)}m from nearest drivable road (tolerance: 150m).`,
-      };
-      this.originPreviews.set(validationId, preview);
-      return preview;
-    }
-
+    const withinRegion = Number.isFinite(lat) && Number.isFinite(lng) && isWithinNitkRegion(lat, lng);
+    const accepted = withinRegion && resolved !== null && distance <= 150 && isWithinNitkRegion(resolved.lat, resolved.lng);
     const preview: OriginPreviewResponse = {
-      clientRequestId,
-      validationId,
-      expiresAt,
-      runId: this.simulationRun.id,
-      runVersion: this.simulationRun.runVersion,
-      regionVersion: NITK_REGION.datasetVersion,
-      graphVersion: '2026.10-nitk-graph',
-      requested: { lat, lng },
-      resolved: { lat: nearestNode.lat, lng: nearestNode.lng },
-      roadSegmentId: 'seg-1',
-      segmentFraction: 0,
-      snapDistanceMeters: Math.round(minDistance),
-      distanceFromNitkKm: parseFloat((distFromNitk / 1000).toFixed(2)),
-      validationStatus: 'ACCEPTED',
-      rejectionCode: null,
-      rejectionReason: null,
+      clientRequestId, validationId: crypto.randomUUID(), expiresAt: new Date(Date.now() + 300000).toISOString(),
+      runId: this.simulationRun.id, runVersion: this.simulationRun.runVersion,
+      regionVersion: NITK_REGION.datasetVersion, graphVersion: roadAccess ? 'GOOGLE_ROUTES' : 'DEMO_GRAPH',
+      requested: { lat, lng }, resolved: accepted ? resolved : null,
+      roadSegmentId: accepted ? segmentId : null, segmentFraction: accepted ? fraction : null,
+      snapDistanceMeters: Number.isFinite(distance) ? Math.round(distance) : null,
+      distanceFromNitkKm: Number((calculateHaversineDistanceMeters(NITK_REGION.centerLat, NITK_REGION.centerLng, lat, lng) / 1000).toFixed(2)),
+      validationStatus: accepted ? 'ACCEPTED' : 'REJECTED',
+      rejectionCode: accepted ? null : withinRegion ? 'NO_ROAD_ACCESS' : 'OUT_OF_REGION',
+      rejectionReason: accepted ? null : withinRegion
+        ? 'No supported road within 150m. Choose a road on the demo network, or configure Google Routes for regional road access.'
+        : 'Select a location within 40 km of NITK.',
     };
-    this.originPreviews.set(validationId, preview);
+    for (const [id, value] of this.originPreviews) if (Date.parse(value.expiresAt) <= Date.now()) this.originPreviews.delete(id);
+    this.originPreviews.set(preview.validationId, preview);
     return preview;
   }
 
   public setAmbulanceOrigin(
-    lat: number,
-    lng: number,
-    expectedRunVersion?: number,
-    validationId?: string,
-    idempotencyKey?: string
-  ): {
-    requested: { lat: number; lng: number };
-    snapped: { lat: number; lng: number };
-    snapDistanceMeters: number;
-    distanceFromNitkKm: number;
-    runVersion: number;
-  } {
-    if (validationId) {
-      const preview = this.originPreviews.get(validationId);
-      if (!preview || preview.validationStatus !== 'ACCEPTED' || !preview.resolved) {
-        const err: any = new Error('Invalid or expired validation ID for origin commit');
-        err.statusCode = 409;
-        err.code = 'EXPIRED_PREVIEW';
-        throw err;
-      }
-      lat = preview.resolved.lat;
-      lng = preview.resolved.lng;
-    }
-
+    lat: number, lng: number, expectedRunVersion?: number, validationId?: string, idempotencyKey?: string,
+  ): { requested: { lat: number; lng: number }; snapped: { lat: number; lng: number }; snapDistanceMeters: number; distanceFromNitkKm: number; runVersion: number } {
+    const fail = (code: string, message: string, statusCode = 409): never => { throw Object.assign(new Error(message), { code, statusCode }); };
+    const fingerprint = JSON.stringify({ lat, lng, validationId, expectedRunVersion });
     if (idempotencyKey && this.idempotencyRecords.has(idempotencyKey)) {
-      const record = this.idempotencyRecords.get(idempotencyKey);
-      if (record.lat === lat && record.lng === lng) {
-        return record.result;
-      } else {
-        const err: any = new Error('Idempotency key reused with different request payload');
-        err.statusCode = 409;
-        err.code = 'IDEMPOTENCY_CONFLICT';
-        throw err;
-      }
+      const previous = this.idempotencyRecords.get(idempotencyKey);
+      if (previous.fingerprint !== fingerprint) fail('IDEMPOTENCY_CONFLICT', 'Request key was already used for a different origin.');
+      return previous.result;
     }
-
-    if (expectedRunVersion !== undefined && this.simulationRun.runVersion !== expectedRunVersion) {
-      const err: any = new Error(
-        `Version conflict: expected runVersion ${expectedRunVersion}, got ${this.simulationRun.runVersion}`
-      );
-      err.statusCode = 409;
-      err.code = 'VERSION_CONFLICT';
-      throw err;
+    if (this.simulationRun.running || Array.from(this.cases.values()).some((c) => c.caseStatus === CaseStatus.EN_ROUTE || c.caseStatus === CaseStatus.DISPATCHING)) {
+      fail('DISALLOWED_RUN_STATE', 'Origin can only be changed during setup, before dispatch.');
     }
-
-    const distFromNitk = calculateHaversineDistanceMeters(
-      NITK_REGION.centerLat,
-      NITK_REGION.centerLng,
-      lat,
-      lng
-    );
-
-    if (distFromNitk > NITK_REGION.radiusMeters) {
-      const err: any = new Error(
-        `OUT_OF_REGION: Ambulance origin must be within 40 km of NITK Surathkal (${(distFromNitk / 1000).toFixed(1)} km from center)`
-      );
-      err.statusCode = 400;
-      err.code = 'OUT_OF_REGION';
-      throw err;
-    }
-
-    let nearestNode = SEEDED_ROAD_GRAPH.nodes[0];
-    let minDistance = Infinity;
-    for (const node of SEEDED_ROAD_GRAPH.nodes) {
-      const d = calculateHaversineDistanceMeters(lat, lng, node.lat, node.lng);
-      if (d < minDistance) {
-        minDistance = d;
-        nearestNode = node;
-      }
-    }
-
-    if (minDistance > 150 && !validationId) {
-      const err: any = new Error(`NO_ROAD_ACCESS: Selected coordinate is ${Math.round(minDistance)}m from drivable road (max 150m)`);
-      err.statusCode = 422;
-      err.code = 'NO_ROAD_ACCESS';
-      throw err;
-    }
-
-    const snappedLat = nearestNode.lat;
-    const snappedLng = nearestNode.lng;
-
-    const metric = projectToNitkMetric(snappedLat, snappedLng);
-    const projectedX = Math.round(metric.x / 10);
-    const projectedY = Math.round(metric.y / 10);
-
-    this.ambulanceOrigin = { lat: snappedLat, lng: snappedLng };
-    this.updateAmbulancePosition(
-      projectedX,
-      projectedY,
-      snappedLat,
-      snappedLng
-    );
-
+    const preview = validationId ? this.originPreviews.get(validationId) : this.previewAmbulanceOrigin(lat, lng);
+    if (!preview || Date.parse(preview.expiresAt) <= Date.now()) return fail('EXPIRED_PREVIEW', 'Preview expired. Select the point again.');
+    if (preview.validationStatus !== 'ACCEPTED' || !preview.resolved) fail(preview.rejectionCode || 'NO_ROAD_ACCESS', preview.rejectionReason || 'Invalid road point.', 422);
+    if ((expectedRunVersion !== undefined && expectedRunVersion !== this.simulationRun.runVersion) || preview.runVersion !== this.simulationRun.runVersion) fail('VERSION_CONFLICT', 'Scenario changed. Select the point again.');
+    const snapped = preview.resolved!;
+    const metric = projectToNitkMetric(snapped.lat, snapped.lng);
+    this.ambulanceOrigin = { ...snapped };
+    this.updateAmbulancePosition(metric.x / 10, metric.y / 10, snapped.lat, snapped.lng);
     this.simulationRun.runVersion += 1;
-
-    const result = {
-      requested: { lat, lng },
-      snapped: { lat: snappedLat, lng: snappedLng },
-      snapDistanceMeters: Math.round(minDistance),
-      distanceFromNitkKm: parseFloat((distFromNitk / 1000).toFixed(2)),
-      runVersion: this.simulationRun.runVersion,
-    };
-
-    if (idempotencyKey) {
-      this.idempotencyRecords.set(idempotencyKey, { lat, lng, result });
-    }
-
+    const result = { requested: preview.requested, snapped, snapDistanceMeters: preview.snapDistanceMeters ?? 0,
+      distanceFromNitkKm: preview.distanceFromNitkKm ?? 0, runVersion: this.simulationRun.runVersion };
+    if (idempotencyKey) this.idempotencyRecords.set(idempotencyKey, { fingerprint, result });
     return result;
   }
 
@@ -645,6 +450,7 @@ class GoldenHourDatabaseStore {
   }
 
   public updateHospital(id: string, updates: Partial<HospitalDto>, expectedVersion?: number): HospitalDto {
+    id = this.resolveHospitalId(id);
     const hospital = this.hospitals.get(id);
     if (!hospital) {
       throw new Error(`Hospital not found: ${id}`);
@@ -910,6 +716,29 @@ class GoldenHourDatabaseStore {
 
   public getRecommendation(caseId: string): RecommendationDto | undefined {
     return this.recommendations.get(caseId);
+  }
+
+  // --- Unified Route Snapshot & Diagnostic Operations (Stage 1 & 2) ---
+  public setCaseRouteSnapshot(snapshot: any): void {
+    this.caseRouteSnapshots.set(snapshot.caseId, snapshot);
+    if (snapshot.snapshotId) {
+      this.caseRouteSnapshots.set(snapshot.snapshotId, snapshot);
+    }
+  }
+
+  public getCaseRouteSnapshot(caseIdOrSnapshotId: string): any | undefined {
+    return this.caseRouteSnapshots.get(caseIdOrSnapshotId);
+  }
+
+  public setRecommendationDiagnostic(diagnostic: any): void {
+    this.recommendationDiagnostics.set(diagnostic.caseId, diagnostic);
+    if (diagnostic.recommendationId) {
+      this.recommendationDiagnostics.set(diagnostic.recommendationId, diagnostic);
+    }
+  }
+
+  public getRecommendationDiagnostic(caseIdOrRecId: string): any | undefined {
+    return this.recommendationDiagnostics.get(caseIdOrRecId);
   }
 
   public updateAmbulancePosition(
@@ -2004,13 +1833,12 @@ class GoldenHourDatabaseStore {
     this.emergencyPriorityTickets.clear();
     this.originPreviews.clear();
     this.idempotencyRecords.clear();
+    this.caseRouteSnapshots.clear();
+    this.recommendationDiagnostics.clear();
     this.clearTrafficOverrides();
 
     // Reset hospital inventories to baseline (both demo and imported canonical pools)
     this.resourcePools.clear();
-    for (const pool of SEEDED_RESOURCE_POOLS) {
-      this.resourcePools.set(pool.id, { ...pool });
-    }
     for (const pool of IMPORTED_NITK_DATASET.resourcePools) {
       this.resourcePools.set(pool.id, { ...pool });
     }

@@ -16,12 +16,16 @@ export type RoutingSource = z.infer<typeof RoutingSourceEnum>;
 
 export const SharedRouteSchema = z.object({
   routeId: z.string(),
+  routeSnapshotId: z.string().optional(),
   originLat: z.number(),
   originLng: z.number(),
   destHospitalId: z.string(),
   destHospitalName: z.string(),
   distanceMeters: z.number().int().nonnegative(),
   durationSeconds: z.number().int().nonnegative(),
+  roadDistanceMeters: z.number().int().nonnegative().optional(),
+  travelSeconds: z.number().int().nonnegative().optional(),
+  straightLineDistanceMeters: z.number().int().nonnegative().optional(),
   routingSource: RoutingSourceEnum,
   trafficMode: z.enum(['TRAFFIC_AWARE', 'SIMULATED_NORMAL', 'SIMULATED_CONGESTED']),
   encodedPolyline: z.string().optional(),
@@ -34,6 +38,7 @@ export type SharedRouteDto = z.infer<typeof SharedRouteSchema>;
 
 export const CaseRoutesResponseSchema = z.object({
   caseId: z.string(),
+  routeSnapshotId: z.string().optional(),
   positionSequence: z.number().int().nonnegative(),
   routes: z.record(z.string(), SharedRouteSchema),
   generatedAt: z.string(),

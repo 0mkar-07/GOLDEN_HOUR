@@ -44,3 +44,10 @@ export function subscribeToRealtimeEvent<T = any>(
     s.off(event, handler);
   };
 }
+
+// Keep existing subscribers, but reauthenticate room membership after account changes.
+export function refreshSocketSession(authenticated: boolean): void {
+  if (!socket) return;
+  socket.disconnect();
+  if (authenticated) socket.connect();
+}

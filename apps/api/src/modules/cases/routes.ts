@@ -12,7 +12,8 @@ import { runAgent1, runAgent1Async } from '../agents/agent1.js';
 import { callGeminiCoordinatorBriefing } from '../agents/gemini.js';
 import { runAgent2 } from '../agents/agent2.js';
 import { runAgent3 } from '../agents/agent3.js';
-import { routingProvider, geographicRoutingProvider } from '../routing/index.js';
+import { runAgentCoordinator } from '../agents/agentCoordinator.js';
+import { routingProvider, geographicRoutingProvider, evaluateCaseCandidateRoutes } from '../routing/index.js';
 import { getIO } from '../realtime/index.js';
 import { SEEDED_ROAD_GRAPH } from '@goldenhour/scenario-fixtures';
 import { simulationService } from '../simulation/service.js';
@@ -217,70 +218,12 @@ export async function registerCaseRoutes(fastify: FastifyInstance) {
         });
       }
 
-      // Run Agent 2: Suitability Filtering
-      const evaluations = runAgent2(
-        assessment.confirmedFullCareNeeds,
-        assessment.confirmedStabilizationNeeds,
-        store.listHospitals(),
-        (id) => store.listResourcePoolsByHospital(id),
-        (id) => store.listStaffByHospital(id)
-      );
-
-      // Run Agent 3: Time Calculation & Dynamic Ranking from Current Position
-      const ranking = runAgent3(
+      // Execute Stage 6 Bounded Agent Coordinator
+      const { recommendation } = await runAgentCoordinator(
         req.params.id,
-        assessment.version,
-        store.ambulancePosition,
-        evaluations,
-        routingProvider,
-        store.trafficOverrides
+        req.user!.id,
+        req.user!.role
       );
-
-      // Generate AI Coordinator Briefing via Gemini Agent
-      let coordinatorBriefing: string | undefined;
-      try {
-        coordinatorBriefing = await callGeminiCoordinatorBriefing(
-          emergencyCase.patientLabel,
-          assessment.observations.presentingIssue,
-          ranking.hospitalA,
-          ranking.hospitalB,
-          ranking.hospitalC,
-          ranking.recommendationMode
-        );
-      } catch {
-        // Standby
-      }
-
-      const recommendation: RecommendationDto = {
-        id: `rec-${req.params.id}-v${assessment.version}-${Date.now()}`,
-        caseId: req.params.id,
-        assessmentVersion: assessment.version,
-        positionSequence: store.ambulancePosition.serverSequence,
-        inventoryVersion: 1,
-        recommendationMode: ranking.recommendationMode,
-        priorityCandidates: ranking.priorityCandidates,
-        hospitalA: ranking.hospitalA,
-        hospitalB: ranking.hospitalB,
-        hospitalC: ranking.hospitalC,
-        allCandidates: ranking.allEvaluations,
-        coordinatorBriefing,
-        generatedAt: new Date().toISOString(),
-      };
-
-      store.setRecommendation(req.params.id, recommendation);
-
-      store.recordAudit({
-        actorId: req.user!.id,
-        actorRole: req.user!.role,
-        action: 'RECOMMENDATIONS_GENERATED',
-        entityType: 'RECOMMENDATION',
-        entityId: recommendation.id,
-        details: {
-          primaryA: ranking.hospitalA?.code ?? 'NONE',
-          backupB: ranking.hospitalB?.code ?? 'NONE',
-          backupC: ranking.hospitalC?.code ?? 'NONE',
-        },
-      });
 
       return reply.status(200).send({ recommendation });
     }
@@ -348,44 +291,44 @@ export async function registerCaseRoutes(fastify: FastifyInstance) {
         });
       }
 
-      const recommendation = store.getRecommendation(req.params.id);
-      const hospitals = store.listHospitals();
       const currentPos = store.ambulancePosition;
 
-      // Determine destinations to calculate routes for
-      const targetHospitals = [];
-      if (recommendation?.hospitalA) {
-        const h = hospitals.find((h) => h.id === recommendation.hospitalA!.hospitalId);
-        if (h) targetHospitals.push(h);
-      }
-      if (recommendation?.hospitalB) {
-        const h = hospitals.find((h) => h.id === recommendation.hospitalB!.hospitalId);
-        if (h && !targetHospitals.some((t) => t.id === h.id)) targetHospitals.push(h);
-      }
-      if (recommendation?.hospitalC) {
-        const h = hospitals.find((h) => h.id === recommendation.hospitalC!.hospitalId);
-        if (h && !targetHospitals.some((t) => t.id === h.id)) targetHospitals.push(h);
-      }
-      if (targetHospitals.length === 0) {
-        targetHospitals.push(...hospitals.slice(0, 3));
-      }
-
-      const routeResults: Record<string, any> = {};
-      for (const target of targetHospitals) {
-        const route = await geographicRoutingProvider.calculateGeographicRoute(
-          { lat: currentPos.lat, lng: currentPos.lng },
-          { hospitalId: target.id, hospitalName: target.name, lat: target.location.lat, lng: target.location.lng },
-          store.trafficOverrides
-        );
-        routeResults[target.id] = route;
+      // Query shared route snapshot used by recommendations (Stage 2 / Finding 31)
+      let snapshot = store.getCaseRouteSnapshot(req.params.id);
+      if (!snapshot) {
+        snapshot = await evaluateCaseCandidateRoutes({
+          caseId: req.params.id,
+          origin: { lat: currentPos.lat, lng: currentPos.lng },
+          candidates: store.listHospitals(),
+          trafficOverrides: store.trafficOverrides,
+          positionSequence: currentPos.serverSequence,
+          sourceGeneration: currentPos.sourceGeneration,
+        });
       }
 
       return reply.status(200).send({
         caseId: req.params.id,
+        routeSnapshotId: snapshot.snapshotId,
         positionSequence: currentPos.serverSequence,
-        routes: routeResults,
-        generatedAt: new Date().toISOString(),
+        routes: snapshot.routes,
+        generatedAt: snapshot.evaluatedAt,
       });
+    }
+  );
+
+  // 10. Get Recommendation Diagnostic Provenance (Stage 1 / Gate 1)
+  fastify.get<{ Params: IdParams }>(
+    '/api/v1/cases/:id/recommendation-diagnostic',
+    { preHandler: [requireAuth] },
+    async (req, reply: FastifyReply) => {
+      const diag = store.getRecommendationDiagnostic(req.params.id);
+      if (!diag) {
+        return reply.status(404).send({
+          code: 'DIAGNOSTIC_NOT_FOUND',
+          message: `No diagnostic report found for case ${req.params.id}`,
+        });
+      }
+      return reply.status(200).send({ diagnostic: diag });
     }
   );
 

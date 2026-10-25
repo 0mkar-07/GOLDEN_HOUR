@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { UserDto, UserRole } from '@goldenhour/contracts';
+import { refreshSocketSession } from '../lib/socket';
 import { apiClient, ApiError } from '../lib/api-client';
 
 interface AuthContextType {
@@ -8,13 +9,12 @@ interface AuthContextType {
   error: string | null;
   login: (email: string, password?: string) => Promise<void>;
   logout: () => Promise<void>;
-  switchUser: (roleKey: 'paramedic' | 'stjude' | 'bayview' | 'admin') => Promise<void>;
+  accounts: Array<UserDto & { hospitalName?: string | null }>;
+  switchUser: (email: string) => Promise<void>;
 }
 
 const DEMO_CREDENTIALS = {
   paramedic: { email: 'paramedic@goldenhour.test', password: 'demo123' },
-  stjude: { email: 'stjude_admin@goldenhour.test', password: 'demo123' },
-  bayview: { email: 'bayview_admin@goldenhour.test', password: 'demo123' },
   admin: { email: 'admin@goldenhour.test', password: 'demo123' },
 };
 
@@ -23,6 +23,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<UserDto | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
+  const [accounts, setAccounts] = useState<Array<UserDto & { hospitalName?: string | null }>>([]);
   const [error, setError] = useState<string | null>(null);
 
   const checkAuth = async () => {
@@ -30,6 +31,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setLoading(true);
       const res = await apiClient.getMe();
       setUser(res.user);
+      refreshSocketSession(true);
       setError(null);
     } catch {
       // If not authenticated in demo environment, auto-login default paramedic demo user
@@ -50,6 +52,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   useEffect(() => {
     checkAuth();
+    apiClient.getDemoAccounts().then((res) => setAccounts(res.accounts)).catch(() => setAccounts([]));
   }, []);
 
   const login = async (email: string, password = 'demo123') => {
@@ -58,6 +61,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setError(null);
       const res = await apiClient.login({ email, password });
       setUser(res.user);
+      refreshSocketSession(true);
     } catch (err: any) {
       setError(err?.message || 'Login failed');
       throw err;
@@ -71,6 +75,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setLoading(true);
       await apiClient.logout();
       setUser(null);
+      refreshSocketSession(false);
     } catch (err: any) {
       setError(err?.message || 'Logout failed');
     } finally {
@@ -78,15 +83,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const switchUser = async (roleKey: 'paramedic' | 'stjude' | 'bayview' | 'admin') => {
-    const creds = DEMO_CREDENTIALS[roleKey];
-    if (creds) {
-      await login(creds.email, creds.password);
-    }
+  const switchUser = async (email: string) => {
+    if (accounts.some((account) => account.email === email)) await login(email, 'demo123');
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, error, login, logout, switchUser }}>
+    <AuthContext.Provider value={{ user, loading, error, login, logout, switchUser, accounts }}>
       {children}
     </AuthContext.Provider>
   );

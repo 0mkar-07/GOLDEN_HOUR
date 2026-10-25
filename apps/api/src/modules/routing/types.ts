@@ -7,12 +7,16 @@ export type RoutingSource = 'GOOGLE_ROUTES' | 'SIMULATED_GRAPH' | 'FALLBACK_GRAP
 
 export interface GeographicRouteResult {
   routeId: string;
+  routeSnapshotId?: string;
   originLat: number;
   originLng: number;
   destHospitalId: string;
   destHospitalName: string;
   distanceMeters: number;
   durationSeconds: number;
+  roadDistanceMeters?: number;
+  travelSeconds?: number;
+  straightLineDistanceMeters?: number;
   routingSource: RoutingSource;
   trafficMode: 'TRAFFIC_AWARE' | 'SIMULATED_NORMAL' | 'SIMULATED_CONGESTED';
   encodedPolyline?: string;

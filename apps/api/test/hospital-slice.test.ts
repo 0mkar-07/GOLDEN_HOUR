@@ -11,12 +11,12 @@ describe('Phase 3 — Hospital Live Data Vertical Slice', () => {
     await store.seed();
     await app.ready();
 
-    // Login as St. Jude (Hosp A) staff
+    // Login as A.J. Hospital (Hosp A) staff
     const loginRes = await app.inject({
       method: 'POST',
       url: '/api/v1/auth/login',
       payload: {
-        email: 'stjude_admin@goldenhour.test',
+        email: 'aj_hospital_mangaluru@goldenhour.test',
         password: 'demo123',
       },
     });
@@ -43,13 +43,13 @@ describe('Phase 3 — Hospital Live Data Vertical Slice', () => {
   });
 
   it('updates resource pool total capacity and recalculates availability server-side', async () => {
-    const pool = store.getResourcePool('pool-001')!; // Ventilator at Hosp A
+    const pool = store.getResourcePool('pool-vent-nitk:AJ_HOSPITAL_MANGALURU')!; // Ventilator at Hosp A
     const currentVersion = pool.version;
 
     // Update total to 10, external to 2, outOfService to 1
     const res = await app.inject({
       method: 'PATCH',
-      url: '/api/v1/resource-pools/pool-001',
+      url: '/api/v1/resource-pools/pool-vent-nitk:AJ_HOSPITAL_MANGALURU',
       cookies: { gh_session: sessionCookie },
       payload: {
         totalCount: 10,
@@ -68,17 +68,17 @@ describe('Phase 3 — Hospital Live Data Vertical Slice', () => {
     expect(body.resourcePool.availableCount).toBe(7);
 
     // Verify persistence in store
-    const persisted = store.getResourcePool('pool-001')!;
+    const persisted = store.getResourcePool('pool-vent-nitk:AJ_HOSPITAL_MANGALURU')!;
     expect(persisted.totalCount).toBe(10);
     expect(persisted.availableCount).toBe(7);
   });
 
   it('rejects version conflicts with 409', async () => {
-    const pool = store.getResourcePool('pool-001')!;
+    const pool = store.getResourcePool('pool-vent-nitk:AJ_HOSPITAL_MANGALURU')!;
 
     const res = await app.inject({
       method: 'PATCH',
-      url: '/api/v1/resource-pools/pool-001',
+      url: '/api/v1/resource-pools/pool-vent-nitk:AJ_HOSPITAL_MANGALURU',
       cookies: { gh_session: sessionCookie },
       payload: {
         totalCount: 12,
@@ -92,13 +92,13 @@ describe('Phase 3 — Hospital Live Data Vertical Slice', () => {
   });
 
   it('rejects reducing capacity below committed allocations', async () => {
-    const pool = store.getResourcePool('pool-001')!;
+    const pool = store.getResourcePool('pool-vent-nitk:AJ_HOSPITAL_MANGALURU')!;
 
     // Out of service is 1, external is 2 => committed is 3
     // Trying to reduce total capacity to 2 must be rejected!
     const res = await app.inject({
       method: 'PATCH',
-      url: '/api/v1/resource-pools/pool-001',
+      url: '/api/v1/resource-pools/pool-vent-nitk:AJ_HOSPITAL_MANGALURU',
       cookies: { gh_session: sessionCookie },
       payload: {
         totalCount: 2,
@@ -113,11 +113,11 @@ describe('Phase 3 — Hospital Live Data Vertical Slice', () => {
   });
 
   it('rejects negative counts with 400 validation error', async () => {
-    const pool = store.getResourcePool('pool-001')!;
+    const pool = store.getResourcePool('pool-vent-nitk:AJ_HOSPITAL_MANGALURU')!;
 
     const res = await app.inject({
       method: 'PATCH',
-      url: '/api/v1/resource-pools/pool-001',
+      url: '/api/v1/resource-pools/pool-vent-nitk:AJ_HOSPITAL_MANGALURU',
       cookies: { gh_session: sessionCookie },
       payload: {
         totalCount: -5,

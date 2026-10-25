@@ -1,3 +1,5 @@
+import { callGoogleComputeRoutes } from '../routing/google-routes.js';
+import { NITK_REGION, isWithinNitkRegion } from '@goldenhour/contracts';
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import { simulationService } from './service.js';
@@ -5,6 +7,8 @@ import { requireAuth, requireRole } from '../auth/plugin.js';
 import { UserRole, SourceSwitchRequestSchema } from '@goldenhour/contracts';
 import { store } from '../../db/store.js';
 import { SEEDED_ROAD_GRAPH } from '@goldenhour/scenario-fixtures';
+
+const previewOwners = new Map<string, { userId: string; expiresAt: number }>();
 
 const SpeedRequestSchema = z.object({
   speedMultiplier: z.number().min(0.5).max(10).default(1.0),
@@ -28,7 +32,7 @@ const OriginRequestSchema = z.object({
   validationId: z.string().optional(),
   expectedRunVersion: z.number().int().positive().optional(),
   idempotencyKey: z.string().optional(),
-});
+}).refine((v) => Boolean(v.validationId) || (v.lat !== undefined && v.lng !== undefined), 'Coordinates or validationId required');
 
 const OriginPreviewRouteSchema = z.object({
   requested: z.object({
@@ -61,7 +65,7 @@ export async function registerSimulationRoutes(fastify: FastifyInstance) {
   // Ambulance origin preview endpoint (Stage 6 & 7 / Section D)
   fastify.post(
     '/api/v1/simulation/origin/preview',
-    { preHandler: [requireAuth] },
+    { preHandler: [requireAuth, requireRole([UserRole.ADMIN, UserRole.AMBULANCE])] },
     async (req: FastifyRequest, reply: FastifyReply) => {
       const parseResult = OriginPreviewRouteSchema.safeParse(req.body);
       if (!parseResult.success) {
@@ -72,12 +76,26 @@ export async function registerSimulationRoutes(fastify: FastifyInstance) {
         });
       }
       const { requested, expectedRunVersion, clientRequestId } = parseResult.data;
+      let roadAccess: { lat: number; lng: number; source: string } | undefined;
+      const apiKey = process.env.GOOGLE_ROUTES_API_KEY || process.env.GOOGLE_MAPS_API_KEY;
+      if (apiKey && !apiKey.startsWith('mock-') && isWithinNitkRegion(requested.lat, requested.lng)) {
+        try {
+          const route = await callGoogleComputeRoutes({ origin: requested,
+            destination: { lat: NITK_REGION.centerLat, lng: NITK_REGION.centerLng }, apiKey });
+          if (route.pathCoordinates[0]) roadAccess = { ...route.pathCoordinates[0], source: 'GOOGLE_ROUTES' };
+        } catch {
+          // Offline graph remains explicitly labelled and limited to its coverage.
+        }
+      }
       const preview = store.previewAmbulanceOrigin(
         requested.lat,
         requested.lng,
         expectedRunVersion,
-        clientRequestId
+        clientRequestId,
+        roadAccess
       );
+      for (const [id, owner] of previewOwners) if (owner.expiresAt <= Date.now()) previewOwners.delete(id);
+      previewOwners.set(preview.validationId, { userId: req.user!.id, expiresAt: Date.parse(preview.expiresAt) });
       return reply.status(200).send(preview);
     }
   );
@@ -85,7 +103,7 @@ export async function registerSimulationRoutes(fastify: FastifyInstance) {
   // Ambulance origin pin placement with 40 km boundary check, 50m road snap, and version validation (Stage 6 & 7)
   fastify.post(
     '/api/v1/simulation/origin',
-    { preHandler: [requireAuth] },
+    { preHandler: [requireAuth, requireRole([UserRole.ADMIN, UserRole.AMBULANCE])] },
     async (req: FastifyRequest, reply: FastifyReply) => {
       const parseResult = OriginRequestSchema.safeParse(req.body);
       if (!parseResult.success) {
@@ -98,14 +116,18 @@ export async function registerSimulationRoutes(fastify: FastifyInstance) {
 
       const { lat, lng, expectedRunVersion, validationId, idempotencyKey } = parseResult.data;
       try {
+        if (validationId && previewOwners.get(validationId)?.userId !== req.user!.id) {
+          return reply.status(409).send({ code: 'EXPIRED_PREVIEW', message: 'Select a new point using this account.' });
+        }
+        const previousVersion = store.simulationRun.runVersion;
         const result = store.setAmbulanceOrigin(
           lat ?? 0,
           lng ?? 0,
           expectedRunVersion,
           validationId,
-          idempotencyKey
+          idempotencyKey ? `${req.user!.id}:${idempotencyKey}` : undefined
         );
-        simulationService.reset();
+        if (store.simulationRun.runVersion !== previousVersion) simulationService.reset(false);
         return reply.status(200).send({
           message: 'Ambulance origin updated and snapped to road network',
           ...result,
@@ -122,15 +144,15 @@ export async function registerSimulationRoutes(fastify: FastifyInstance) {
             message: err.message,
           });
         }
-        if (err.code === 'NO_ROAD_ACCESS' || err.statusCode === 422) {
-          return reply.status(422).send({
-            code: 'NO_ROAD_ACCESS',
+        if (err.code === 'OUT_OF_REGION' || err.message?.includes('OUT_OF_REGION')) {
+          return reply.status(400).send({
+            code: 'OUT_OF_REGION',
             message: err.message,
           });
         }
-        if (err.code === 'OUT_OF_REGION' || err.message.includes('OUT_OF_REGION')) {
-          return reply.status(400).send({
-            code: 'OUT_OF_REGION',
+        if (err.code === 'NO_ROAD_ACCESS' || err.statusCode === 422) {
+          return reply.status(422).send({
+            code: 'NO_ROAD_ACCESS',
             message: err.message,
           });
         }
@@ -145,8 +167,11 @@ export async function registerSimulationRoutes(fastify: FastifyInstance) {
   // Reset ambulance origin to NITK default (13.0108, 74.7936)
   fastify.post(
     '/api/v1/simulation/origin/reset-default',
-    { preHandler: [requireAuth] },
+    { preHandler: [requireAuth, requireRole([UserRole.ADMIN, UserRole.AMBULANCE])] },
     async (_req: FastifyRequest, reply: FastifyReply) => {
+      if (store.simulationRun.running || Array.from(store.cases.values()).some((c) => ['EN_ROUTE', 'DISPATCHING'].includes(c.caseStatus))) {
+        return reply.code(409).send({ code: 'DISALLOWED_RUN_STATE', message: 'Reset origin during setup, before dispatch.' });
+      }
       const defaultOrigin = store.resetAmbulanceOriginToDefault();
       simulationService.reset();
       return reply.status(200).send({

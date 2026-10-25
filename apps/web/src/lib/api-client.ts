@@ -97,6 +97,10 @@ export const apiClient = {
     });
   },
 
+  async getDemoAccounts(): Promise<{ accounts: Array<UserDto & { hospitalName?: string | null }> }> {
+    return request('/api/v1/auth/demo-accounts', { method: 'GET' });
+  },
+
   // Hospital API
   async listHospitals(): Promise<{ hospitals: HospitalDto[] }> {
     return request<{ hospitals: HospitalDto[] }>('/api/v1/hospitals', {

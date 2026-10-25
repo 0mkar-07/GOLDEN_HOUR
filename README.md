@@ -126,9 +126,12 @@ Users can log in with the following seeded accounts or use the persistent **"Swi
 | Role | Entity / Facility | Email | Password |
 |---|---|---|---|
 | **Paramedic** | Ambulance Fleet (Medic 4) | `paramedic@goldenhour.test` | `demo123` |
-| **Hospital Clinician** | St. Jude Trauma Center (Hospital A) | `stjude_admin@goldenhour.test` | `demo123` |
-| **Hospital Clinician** | Bayview Community Hospital (Hospital B) | `bayview_admin@goldenhour.test` | `demo123` |
+| **Hospital Clinician** | A.J. Hospital and Research Centre | `aj_hospital_mangaluru@goldenhour.test` | `demo123` |
+| **Hospital Clinician** | Padmavathi Hospital | `padmavathi_surathkal@goldenhour.test` | `demo123` |
 | **System Dispatcher** | Regional Command / Admin | `admin@goldenhour.test` | `demo123` |
+
+All 23 supplied facilities have separate demo accounts. Select a facility in the header or see [the current hospital login list](docs/current-hospital-demo-logins.md). Names and coordinates come from the supplied NITK dataset; operational capacity is synthetic.
+
 
 ---
 
@@ -149,7 +152,7 @@ Follow these 7 steps to showcase the full clinical emergency lifecycle:
    - Click **"Dispatch to St. Jude"**.
 
 3. **Step 3: Hospital Receipt & Atomic Equipment Reservation (Hospital View)**
-   - Switch role to `stjude_admin@goldenhour.test`.
+   - Switch role to `aj_hospital_mangaluru@goldenhour.test`.
    - In the incoming emergency request banner, click **"Accept Case"**.
    - Watch the inventory pools immediately update: Trauma Bay, Neuro OR, and ICU Bed transition from `Available` $\rightarrow$ `Reserved`.
 

@@ -73,7 +73,7 @@ describe('Stage 1 & Stage 2 — Contracts, Identity, Source Ownership & Movement
 
   it('2. Multi-Edge Traversal: Single step across multiple edges consumes distance and calculates correct progress', async () => {
     simulationService.reset();
-    expect(store.ambulancePosition.x).toBe(120);
+    expect(store.ambulancePosition.x).toBe(0);
 
     // Large step of 30 seconds at 50 km/h (~416 meters) traverses across multiple graph segments
     const stepRes = await app.inject({

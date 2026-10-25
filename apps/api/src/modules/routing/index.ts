@@ -1,4 +1,4 @@
-import { RoadGraphDto, RoadNodeDto, RoadEdgeDto } from '@goldenhour/contracts';
+import { RoadGraphDto, RoadNodeDto, RoadEdgeDto, calculateHaversineDistanceMeters } from '@goldenhour/contracts';
 import { SEEDED_ROAD_GRAPH } from '@goldenhour/scenario-fixtures';
 import {
   LatLngDto,
@@ -10,6 +10,7 @@ import { callGoogleComputeRoutes } from './google-routes.js';
 
 export * from './types.js';
 export * from './google-routes.js';
+export * from './snapshot.js';
 
 export interface RouteResult {
   fromNodeId: string;
@@ -209,19 +210,57 @@ export class SimulatedGeographicRoutingProvider implements GeographicRoutingProv
     dest: { hospitalId: string; hospitalName: string; lat: number; lng: number },
     trafficOverrides: Record<string, number> = {}
   ): Promise<GeographicRouteResult> {
+    const straightLineDistanceMeters = Math.round(
+      calculateHaversineDistanceMeters(origin.lat, origin.lng, dest.lat, dest.lng)
+    );
+
     const originNode = this.findClosestGraphNode(origin.lat, origin.lng);
     const destNode = this.findClosestGraphNode(dest.lat, dest.lng);
 
-    try {
-      const graphRoute = this.graphRouter.calculateRoute(originNode.id, destNode.id, trafficOverrides);
+    const originConnectorDist = calculateHaversineDistanceMeters(
+      origin.lat,
+      origin.lng,
+      originNode.lat,
+      originNode.lng
+    );
+    const destConnectorDist = calculateHaversineDistanceMeters(
+      dest.lat,
+      dest.lng,
+      destNode.lat,
+      destNode.lng
+    );
 
+    // Cost connectors at local road speed 30 km/h (~8.33 m/s)
+    const ACCESS_SPEED_MPS = 8.33;
+    const originConnectorSeconds = Math.round(originConnectorDist / ACCESS_SPEED_MPS);
+    const destConnectorSeconds = Math.round(destConnectorDist / ACCESS_SPEED_MPS);
+
+    try {
+      let routeDistance = 0;
+      let routeDuration = 0;
       const pathCoordinates: LatLngDto[] = [origin];
-      for (const nodeId of graphRoute.pathNodeIds) {
-        const node = this.graph.nodes.find((n) => n.id === nodeId);
-        if (node) {
-          pathCoordinates.push({ lat: node.lat, lng: node.lng });
+
+      if (originNode.id === destNode.id) {
+        if (straightLineDistanceMeters < 100) {
+          routeDistance = straightLineDistanceMeters;
+          routeDuration = Math.max(15, Math.round(straightLineDistanceMeters / ACCESS_SPEED_MPS));
+        } else {
+          routeDistance = Math.round(originConnectorDist + destConnectorDist);
+          routeDuration = Math.max(30, originConnectorSeconds + destConnectorSeconds);
+          pathCoordinates.push({ lat: originNode.lat, lng: originNode.lng });
         }
+      } else {
+        const graphRoute = this.graphRouter.calculateRoute(originNode.id, destNode.id, trafficOverrides);
+        for (const nodeId of graphRoute.pathNodeIds) {
+          const node = this.graph.nodes.find((n) => n.id === nodeId);
+          if (node) {
+            pathCoordinates.push({ lat: node.lat, lng: node.lng });
+          }
+        }
+        routeDistance = Math.round(originConnectorDist + graphRoute.totalDistanceMeters + destConnectorDist);
+        routeDuration = originConnectorSeconds + graphRoute.travelSeconds + destConnectorSeconds;
       }
+
       pathCoordinates.push({ lat: dest.lat, lng: dest.lng });
 
       return {
@@ -230,8 +269,11 @@ export class SimulatedGeographicRoutingProvider implements GeographicRoutingProv
         originLng: origin.lng,
         destHospitalId: dest.hospitalId,
         destHospitalName: dest.hospitalName,
-        distanceMeters: graphRoute.totalDistanceMeters,
-        durationSeconds: graphRoute.travelSeconds,
+        distanceMeters: routeDistance,
+        durationSeconds: routeDuration,
+        roadDistanceMeters: routeDistance,
+        travelSeconds: routeDuration,
+        straightLineDistanceMeters,
         routingSource: 'SIMULATED_GRAPH',
         trafficMode: Object.keys(trafficOverrides).length > 0 ? 'SIMULATED_CONGESTED' : 'SIMULATED_NORMAL',
         pathCoordinates,
@@ -245,14 +287,15 @@ export class SimulatedGeographicRoutingProvider implements GeographicRoutingProv
         originLng: origin.lng,
         destHospitalId: dest.hospitalId,
         destHospitalName: dest.hospitalName,
-        distanceMeters: 0,
-        durationSeconds: 9999,
+        distanceMeters: straightLineDistanceMeters,
+        durationSeconds: 0,
+        straightLineDistanceMeters,
         routingSource: 'SIMULATED_GRAPH',
         trafficMode: 'SIMULATED_NORMAL',
         pathCoordinates: [origin, { lat: dest.lat, lng: dest.lng }],
         calculatedAt: new Date().toISOString(),
         status: 'UNAVAILABLE',
-        unavailabilityReason: err.message,
+        unavailabilityReason: err.message || 'NO_ROUTABLE_PATH',
       };
     }
   }
@@ -261,7 +304,7 @@ export class SimulatedGeographicRoutingProvider implements GeographicRoutingProv
     let closest = this.graph.nodes[0];
     let minD = Number.MAX_VALUE;
     for (const node of this.graph.nodes) {
-      const d = (node.lat - lat) ** 2 + (node.lng - lng) ** 2;
+      const d = calculateHaversineDistanceMeters(lat, lng, node.lat, node.lng);
       if (d < minD) {
         minD = d;
         closest = node;
@@ -315,6 +358,11 @@ export class GoogleRoutesProvider implements GeographicRoutingProvider {
         destHospitalName: dest.hospitalName,
         distanceMeters: res.distanceMeters,
         durationSeconds: res.durationSeconds,
+        roadDistanceMeters: res.distanceMeters,
+        travelSeconds: res.durationSeconds,
+        straightLineDistanceMeters: Math.round(
+          calculateHaversineDistanceMeters(origin.lat, origin.lng, dest.lat, dest.lng)
+        ),
         routingSource: 'GOOGLE_ROUTES',
         trafficMode: 'TRAFFIC_AWARE',
         encodedPolyline: res.encodedPolyline,

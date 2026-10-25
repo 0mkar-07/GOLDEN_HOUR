@@ -56,8 +56,7 @@ export function initSocketIO(httpServer: HttpServer) {
       // Admin users join admin global room
       if (user.role === UserRole.ADMIN) {
         socket.join('admin');
-        socket.join('hospital:hosp-001');
-        socket.join('hospital:hosp-002');
+        for (const hospital of store.listHospitals()) socket.join(`hospital:${hospital.id}`);
       }
     } else {
       // Default demo room

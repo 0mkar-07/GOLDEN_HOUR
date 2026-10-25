@@ -39,7 +39,7 @@ export const AdminPage: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
 
   // Map selection state
-  const [selectedHospitalId, setSelectedHospitalId] = useState<string | null>('hosp-001');
+  const [selectedHospitalId, setSelectedHospitalId] = useState<string | null>(null);
 
   // Audit filter state
   const [selectedCaseId, setSelectedCaseId] = useState<string>('');

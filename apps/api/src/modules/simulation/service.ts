@@ -6,6 +6,7 @@ import {
   DestinationReadiness,
   UserRole,
   projectToNitkMetric,
+  NITK_REGION,
 } from '@goldenhour/contracts';
 import { SEEDED_ROAD_GRAPH } from '@goldenhour/scenario-fixtures';
 import { store } from '../../db/store.js';
@@ -45,7 +46,7 @@ class SimulationService {
         speedMultiplier: this.speedMultiplier,
         simulatedSeconds: this.simulatedSeconds,
         scenarioStep: this.getScenarioStep(),
-        runVersion: this.runVersion,
+        runVersion: store.simulationRun.runVersion,
         assignedAmbulanceId: 'amb-104',
         completed: this.completed,
         checkpointCount: this.checkpointCount,
@@ -64,6 +65,7 @@ class SimulationService {
   public play(speedMultiplier = 1.0): SimulationRunDto {
     this.speedMultiplier = Math.max(0.5, Math.min(10, speedMultiplier));
     this.running = true;
+    store.simulationRun.running = true;
     this.completed = false;
     this.lastWallTime = Date.now();
 
@@ -89,6 +91,7 @@ class SimulationService {
 
   public pause(): SimulationRunDto {
     this.running = false;
+    store.simulationRun.running = false;
     this.lastWallTime = null;
     if (this.ticker) {
       clearInterval(this.ticker);
@@ -113,14 +116,15 @@ class SimulationService {
     return this.getSimulationState().simulationRun;
   }
 
-  public reset(): SimulationRunDto {
+  public reset(incrementVersion = true): SimulationRunDto {
     this.pause();
     this.simulatedSeconds = 0;
     this.currentEdgeIndex = 0;
     this.distanceOnCurrentEdge = 0;
     this.activeRoute = null;
     this.completed = false;
-    this.runVersion += 1;
+    if (incrementVersion) store.simulationRun.runVersion += 1;
+    this.runVersion = store.simulationRun.runVersion;
 
     // Reset ambulance position to selected scenario origin (or NITK default) (F-13)
     const origin = store.ambulanceOrigin;

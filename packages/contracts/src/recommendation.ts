@@ -11,6 +11,14 @@ export const RecommendationModeEnum = z.enum([
 ]);
 export type RecommendationMode = z.infer<typeof RecommendationModeEnum>;
 
+export const EvaluationModeEnum = z.enum([
+  'LLM_ASSISTED',
+  'RULES_FALLBACK',
+  'WAITING_FOR_DATA',
+  'PROVISIONAL',
+]);
+export type EvaluationMode = z.infer<typeof EvaluationModeEnum>;
+
 export const CandidateEvaluationSchema = z.object({
   hospitalId: z.string(),
   code: z.string(),
@@ -22,9 +30,15 @@ export const CandidateEvaluationSchema = z.object({
   careObjective: CareObjectiveEnum.optional(),
   travelSeconds: z.number().int().nonnegative(),
   readyAtSeconds: z.number().int().nonnegative(),
+  waitAfterArrivalSeconds: z.number().int().nonnegative().default(0).optional(),
   receivingDelaySeconds: z.number().int().nonnegative(),
   careStartSeconds: z.number().int().nonnegative(),
   timeToCareSeconds: z.number().int().nonnegative(),
+  roadDistanceMeters: z.number().int().nonnegative().nullable().optional(),
+  straightLineDistanceMeters: z.number().int().nonnegative().nullable().optional(),
+  routeStatus: z.enum(['AVAILABLE', 'UNAVAILABLE', 'PENDING', 'STALE']).default('AVAILABLE').optional(),
+  limitingReason: z.string().optional(),
+  whyChanged: z.string().optional(),
   reasons: z.array(z.string()),
   missingCapabilities: z.array(z.string()),
   limitations: z.array(z.string()).optional(),
@@ -45,9 +59,15 @@ export const PriorityCandidateSchema = z.object({
   stabilizationEligible: z.boolean().default(true),
   travelSeconds: z.number().int().nonnegative(),
   readyAtSeconds: z.number().int().nonnegative().default(0),
+  waitAfterArrivalSeconds: z.number().int().nonnegative().default(0).optional(),
   receivingDelaySeconds: z.number().int().nonnegative().default(0),
   careStartSeconds: z.number().int().nonnegative(),
   timeToCareSeconds: z.number().int().nonnegative(),
+  roadDistanceMeters: z.number().int().nonnegative().nullable().optional(),
+  straightLineDistanceMeters: z.number().int().nonnegative().nullable().optional(),
+  routeStatus: z.enum(['AVAILABLE', 'UNAVAILABLE', 'PENDING', 'STALE']).default('AVAILABLE').optional(),
+  limitingReason: z.string().optional(),
+  whyChanged: z.string().optional(),
   reasons: z.array(z.string()).default([]),
   missingCapabilities: z.array(z.string()).default([]),
   limitations: z.array(z.string()).default([]),
@@ -64,6 +84,10 @@ export const RecommendationSchema = z.object({
   positionSequence: z.number().int().nonnegative(),
   inventoryVersion: z.number().int().positive(),
   recommendationMode: RecommendationModeEnum.optional(),
+  routeSnapshotId: z.string().optional(),
+  evaluationMode: EvaluationModeEnum.default('RULES_FALLBACK').optional(),
+  diagnosticId: z.string().optional(),
+  whyChanged: z.string().optional(),
   priorityCandidates: z.array(PriorityCandidateSchema).optional(),
   hospitalA: CandidateEvaluationSchema.nullable(),
   hospitalB: CandidateEvaluationSchema.nullable(),

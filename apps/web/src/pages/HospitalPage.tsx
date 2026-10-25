@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import {
   Building2,
   Layers,
@@ -45,8 +45,12 @@ export const HospitalPage: React.FC = () => {
   const { user } = useAuth();
   const { hospitals, loading: hospitalsLoading, error: hospitalsError, reload: reloadHospitals } = useHospitalDirectory();
 
+  useEffect(() => {
+    setSelectedHospitalId((previous) => user?.hospitalId || (hospitals.some((h) => h.id === previous) ? previous : hospitals[0]?.id || ''));
+  }, [user?.id, user?.hospitalId, hospitals]);
+
   // State
-  const [selectedHospitalId, setSelectedHospitalId] = useState<string>('hosp-001');
+  const [selectedHospitalId, setSelectedHospitalId] = useState<string>('');
   const [currentHospital, setCurrentHospital] = useState<HospitalDto | null>(null);
   const [resourcePools, setResourcePools] = useState<ResourcePoolDto[]>([]);
   const [staffList, setStaffList] = useState<StaffAvailabilityDto[]>([]);
@@ -80,9 +84,12 @@ export const HospitalPage: React.FC = () => {
     }
   }, [user]);
 
+  const loadSequence = useRef(0);
   // Load data for selected hospital
   const loadHospitalData = useCallback(async (hospId: string) => {
+    const sequence = ++loadSequence.current;
     setLoading(true);
+    setCurrentHospital(null);
     setError(null);
     try {
       const [hospRes, poolsRes, staffRes] = await Promise.all([
@@ -91,6 +98,7 @@ export const HospitalPage: React.FC = () => {
         apiClient.getHospitalStaff(hospId),
       ]);
 
+      if (sequence !== loadSequence.current) return;
       setCurrentHospital(hospRes.hospital);
       setResourcePools(poolsRes.resourcePools || []);
       setStaffList(staffRes.staffAvailability || []);
@@ -104,12 +112,14 @@ export const HospitalPage: React.FC = () => {
           apiClient.getHospitalProcedures(hospId),
           apiClient.getHospitalPriorityTickets(hospId),
         ]);
+        if (sequence !== loadSequence.current) return;
         setRequests(reqsRes?.requests || []);
         setAllocations(allocsRes?.allocations || []);
         setTheatres(theatresRes?.theatres || []);
         setProcedures(procsRes?.procedures || []);
         setPriorityTickets(ticketsRes?.tickets || []);
       } catch {
+        if (sequence !== loadSequence.current) return;
         setRequests([]);
         setAllocations([]);
         setTheatres([]);
@@ -117,9 +127,9 @@ export const HospitalPage: React.FC = () => {
         setPriorityTickets([]);
       }
     } catch (err: any) {
-      setError(err?.message || 'Failed to load hospital state');
+      if (sequence === loadSequence.current) setError(err?.message || 'Failed to load hospital state');
     } finally {
-      setLoading(false);
+      if (sequence === loadSequence.current) setLoading(false);
     }
   }, []);
 
@@ -127,6 +137,7 @@ export const HospitalPage: React.FC = () => {
     if (selectedHospitalId) {
       loadHospitalData(selectedHospitalId);
     }
+    return () => { loadSequence.current += 1; };
   }, [selectedHospitalId, loadHospitalData]);
 
   // Real-Time Socket.IO Subscriptions

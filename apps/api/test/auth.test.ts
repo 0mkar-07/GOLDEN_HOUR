@@ -11,18 +11,20 @@ describe('Phase 2 — Identity, Boundaries, and Seed Verification', () => {
     await app.ready();
   });
 
-  it('verifies seed contains exactly the intended five hospitals', () => {
+  it('verifies seed contains exactly the 23 supplied NITK facilities', () => {
     const hospitals = store.listHospitals();
-    expect(hospitals.length).toBe(5);
+    expect(hospitals.length).toBe(23);
     const codes = hospitals.map((h) => h.code).sort();
-    expect(codes).toEqual(['HOSP-A', 'HOSP-B', 'HOSP-C', 'HOSP-D', 'HOSP-E']);
+    expect(new Set(codes).size).toBe(23);
+    expect(codes).toContain('NITK-CHIRASHREE_SURATHKAL');
+    expect(codes).toContain('NITK-KMC_ATTAVAR');
   });
 
   it('seed is idempotent and safe to rerun', async () => {
     await store.seed();
     await store.seed();
-    expect(store.listHospitals().length).toBe(5);
-    expect(store.users.size).toBe(4);
+    expect(store.listHospitals().length).toBe(23);
+    expect(store.users.size).toBe(25);
   });
 
   it('rejects unauthenticated requests to protected endpoints with 401', async () => {
@@ -70,12 +72,12 @@ describe('Phase 2 — Identity, Boundaries, and Seed Verification', () => {
   });
 
   it('enforces cross-hospital mutation denial (Hospital A cannot mutate Hospital B)', async () => {
-    // 1. Login as St. Jude (Hospital A) user
+    // 1. Login as A.J. Hospital (Hospital A) user
     const loginRes = await app.inject({
       method: 'POST',
       url: '/api/v1/auth/login',
       payload: {
-        email: 'stjude_admin@goldenhour.test',
+        email: 'aj_hospital_mangaluru@goldenhour.test',
         password: 'demo123',
       },
     });
@@ -103,12 +105,12 @@ describe('Phase 2 — Identity, Boundaries, and Seed Verification', () => {
   });
 
   it('allows Hospital A user to mutate Hospital A within valid version', async () => {
-    // Login as St. Jude
+    // Login as A.J. Hospital
     const loginRes = await app.inject({
       method: 'POST',
       url: '/api/v1/auth/login',
       payload: {
-        email: 'stjude_admin@goldenhour.test',
+        email: 'aj_hospital_mangaluru@goldenhour.test',
         password: 'demo123',
       },
     });
@@ -137,7 +139,7 @@ describe('Phase 2 — Identity, Boundaries, and Seed Verification', () => {
       method: 'POST',
       url: '/api/v1/auth/login',
       payload: {
-        email: 'stjude_admin@goldenhour.test',
+        email: 'aj_hospital_mangaluru@goldenhour.test',
         password: 'demo123',
       },
     });
@@ -145,14 +147,14 @@ describe('Phase 2 — Identity, Boundaries, and Seed Verification', () => {
 
     // Pool 001 (Ventilator at Hosp A): total=8, outOfService=1, external=4 (committed=5)
     // Trying to reduce totalCount to 3 should be rejected!
-    const pool = store.getResourcePool('pool-001')!;
+    const pool = store.getResourcePool('pool-vent-nitk:AJ_HOSPITAL_MANGALURU')!;
 
     const failRes = await app.inject({
       method: 'PATCH',
-      url: '/api/v1/resource-pools/pool-001',
+      url: '/api/v1/resource-pools/pool-vent-nitk:AJ_HOSPITAL_MANGALURU',
       cookies: { gh_session: sessionCookie },
       payload: {
-        totalCount: 3,
+        totalCount: 0,
         expectedVersion: pool.version,
       },
     });

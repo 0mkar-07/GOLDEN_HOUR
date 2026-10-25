@@ -4,6 +4,7 @@ import {
   AmbulancePositionDto,
   RecommendationDto,
   SharedRouteDto,
+  NITK_REGION,
 } from '@goldenhour/contracts';
 import { apiClient } from '../lib/api-client';
 import {
@@ -75,14 +76,23 @@ export const LiveMap: React.FC<LiveMapProps> = ({
 
   // Pin Placement State Machine (Stage 6 / F-11)
   // IDLE -> PICKING -> VALIDATING -> READY_TO_CONFIRM -> SAVING -> CONFIRMED / ERROR
-  const [pinState, setPinState] = useState<PinState>('IDLE');
+  const [pinState, updatePinState] = useState<PinState>('IDLE');
   const pinStateRef = useRef<PinState>('IDLE');
-  pinStateRef.current = pinState;
+  const setPinState = (value: PinState) => { pinStateRef.current = value; updatePinState(value); };
+  const previewSequence = useRef(0);
+  const [committedPosition, setCommittedPosition] = useState<{ lat: number; lng: number; at: number } | null>(null);
+  const [coordinateInput, setCoordinateInput] = useState({ lat: '', lng: '' });
+  useEffect(() => () => { previewSequence.current += 1; }, []);
+  useEffect(() => {
+    if (committedPosition && ambulancePosition?.observedAt && Date.parse(ambulancePosition.observedAt) > committedPosition.at) setCommittedPosition(null);
+  }, [ambulancePosition?.observedAt, committedPosition]);
 
   const [draftOrigin, setDraftOrigin] = useState<{
     requested: { lat: number; lng: number };
     resolved: { lat: number; lng: number } | null;
     validationId?: string;
+    runVersion?: number;
+    source?: string;
     snapDistanceMeters?: number;
     distanceFromNitkKm?: number;
     error?: string;
@@ -96,8 +106,8 @@ export const LiveMap: React.FC<LiveMapProps> = ({
   const [dragStart, setDragStart] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
 
   // Safe coordinates (NITK Surathkal region default)
-  const ambLat = ambulancePosition?.lat ?? 13.0110;
-  const ambLng = ambulancePosition?.lng ?? 74.7943;
+  const ambLat = committedPosition?.lat ?? ambulancePosition?.lat ?? NITK_REGION.centerLat;
+  const ambLng = committedPosition?.lng ?? ambulancePosition?.lng ?? NITK_REGION.centerLng;
   const ambHeading = ambulancePosition?.heading ?? 85;
   const ambSpeed = ambulancePosition?.speed ?? 0;
 
@@ -112,6 +122,32 @@ export const LiveMap: React.FC<LiveMapProps> = ({
   const primaryHospitalId = confirmedHospitalId || recommendation?.hospitalA?.hospitalId;
   const primaryRoute = primaryHospitalId ? routes[primaryHospitalId] : null;
   const backupBRoute = recommendation?.hospitalB?.hospitalId ? routes[recommendation.hospitalB.hospitalId] : null;
+
+  const validateOriginRef = useRef<(lat: number, lng: number) => Promise<void>>(async () => {});
+  validateOriginRef.current = async (lat, lng) => {
+    if (!['PICKING', 'VALIDATING', 'READY_TO_CONFIRM', 'ERROR'].includes(pinStateRef.current)) return;
+    const sequence = ++previewSequence.current;
+    setFollowAmbulance(false);
+    setDraftOrigin({ requested: { lat, lng }, resolved: null });
+    setPinState('VALIDATING');
+    setOriginFeedback('Checking road access within 40 km of NITK?');
+    try {
+      const preview = await apiClient.previewSimulationOrigin(lat, lng, undefined, String(sequence));
+      if (sequence !== previewSequence.current) return;
+      setDraftOrigin({ requested: preview.requested, resolved: preview.resolved,
+        validationId: preview.validationId, runVersion: preview.runVersion, source: preview.graphVersion,
+        snapDistanceMeters: preview.snapDistanceMeters ?? undefined,
+        distanceFromNitkKm: preview.distanceFromNitkKm ?? undefined,
+        error: preview.rejectionReason || undefined });
+      setPinState(preview.validationStatus === 'ACCEPTED' ? 'READY_TO_CONFIRM' : 'ERROR');
+      setOriginFeedback(preview.validationStatus === 'ACCEPTED'
+        ? `Review the draft pin (${preview.graphVersion === 'GOOGLE_ROUTES' ? 'Google road access' : 'limited demo road network'}), then confirm.`
+        : preview.rejectionReason || 'No supported road access here.');
+    } catch (err: any) {
+      if (sequence !== previewSequence.current) return;
+      setPinState('ERROR'); setOriginFeedback(err.message || 'Validation failed. Try again.');
+    }
+  };
 
   // 1. Load Google Maps JavaScript API (Stage 3.1)
   useEffect(() => {
@@ -178,54 +214,27 @@ export const LiveMap: React.FC<LiveMapProps> = ({
         fillOpacity: 0.04,
         map,
         center: { lat: 13.0108, lng: 74.7936 },
-        radius: 40000,
+        radius: NITK_REGION.radiusMeters,
+        clickable: false,
       });
 
       // Click listener for ambulance pin placement: Only active in PICKING/READY_TO_CONFIRM state (F-11 / Stage 6)
-      map.addListener('click', async (e: any) => {
-        if (pinStateRef.current !== 'PICKING' && pinStateRef.current !== 'READY_TO_CONFIRM' && pinStateRef.current !== 'ERROR') {
-          return; // Ordinary clicks, hospital clicks, and pans do NOT mutate origin!
-        }
-        if (!e.latLng) return;
-        const lat = e.latLng.lat();
-        const lng = e.latLng.lng();
-
-        setPinState('VALIDATING');
-        setOriginFeedback('Validating road access and 40 km boundary...');
-
-        try {
-          const preview = await apiClient.previewSimulationOrigin(lat, lng);
-          if (preview.validationStatus === 'ACCEPTED' && preview.resolved) {
-            setDraftOrigin({
-              requested: preview.requested,
-              resolved: preview.resolved,
-              validationId: preview.validationId,
-              snapDistanceMeters: preview.snapDistanceMeters ?? undefined,
-              distanceFromNitkKm: preview.distanceFromNitkKm ?? undefined,
-            });
-            setPinState('READY_TO_CONFIRM');
-            setOriginFeedback(
-              `Draft pin: ${preview.distanceFromNitkKm}km from NITK (${preview.snapDistanceMeters}m road snap). Click 'Confirm Origin Pin' to commit.`
-            );
-          } else {
-            setDraftOrigin({
-              requested: { lat, lng },
-              resolved: null,
-              error: preview.rejectionReason || 'Point outside 40 km boundary or no road access within 50m',
-            });
-            setPinState('ERROR');
-            setOriginFeedback(preview.rejectionReason || 'Cannot place origin here');
-          }
-        } catch (err: any) {
-          setPinState('ERROR');
-          setOriginFeedback(err.message || 'Validation failed');
-        }
+      const clickListener = map.addListener('click', (e: any) => {
+        if (e.latLng) void validateOriginRef.current(e.latLng.lat(), e.latLng.lng());
       });
 
       // Handle user manual pan: suspend follow
-      map.addListener('dragstart', () => {
+      const dragListener = map.addListener('dragstart', () => {
         setFollowAmbulance(false);
       });
+      return () => {
+        clickListener.remove(); dragListener.remove();
+        for (const marker of hospitalMarkersRef.current.values()) marker.setMap(null);
+        hospitalMarkersRef.current.clear();
+        ambulanceMarkerRef.current?.setMap(null); ambulanceMarkerRef.current = null;
+        draftMarkerRef.current?.setMap(null); draftMarkerRef.current = null;
+        googleMapInstance.current = null;
+      };
     } catch (e) {
       console.warn('Google Maps initialization failed, falling back to canvas:', e);
       setGoogleMapsReady(false);
@@ -285,6 +294,9 @@ export const LiveMap: React.FC<LiveMapProps> = ({
 
     // Update Hospital Markers
     const currentMarkerMap = hospitalMarkersRef.current;
+    for (const [id, marker] of currentMarkerMap) {
+      if (!hospitals.some((hospital) => hospital.id === id)) { marker.setMap(null); currentMarkerMap.delete(id); }
+    }
     hospitals.forEach((hosp) => {
       const hLat = hosp.location?.lat ?? 13.0108;
       const hLng = hosp.location?.lng ?? 74.7936;
@@ -340,6 +352,7 @@ export const LiveMap: React.FC<LiveMapProps> = ({
       const primaryPolyline = new google.maps.Polyline({
         path: primaryRoute.pathCoordinates.map((pt) => ({ lat: pt.lat, lng: pt.lng })),
         geodesic: true,
+        clickable: false,
         strokeColor: '#176B68',
         strokeOpacity: 0.9,
         strokeWeight: 6,
@@ -353,6 +366,7 @@ export const LiveMap: React.FC<LiveMapProps> = ({
       const backupPolyline = new google.maps.Polyline({
         path: backupBRoute.pathCoordinates.map((pt) => ({ lat: pt.lat, lng: pt.lng })),
         geodesic: true,
+        clickable: false,
         strokeColor: '#D97706',
         strokeOpacity: 0.8,
         strokeWeight: 4,
@@ -427,27 +441,28 @@ export const LiveMap: React.FC<LiveMapProps> = ({
 
   // Confirm and commit validated ambulance origin (Stage 6)
   const handleConfirmOrigin = async () => {
-    if (!draftOrigin || !draftOrigin.resolved) return;
+    if (!draftOrigin?.resolved || !draftOrigin.validationId || pinStateRef.current !== 'READY_TO_CONFIRM') return;
     setPinState('SAVING');
     try {
       const res = await apiClient.setSimulationOrigin(draftOrigin.resolved.lat, draftOrigin.resolved.lng, {
         validationId: draftOrigin.validationId,
+        expectedRunVersion: draftOrigin.runVersion,
+        idempotencyKey: draftOrigin.validationId,
       });
+      setCommittedPosition({ ...res.snapped, at: Date.now() });
       setPinState('CONFIRMED');
       setOriginFeedback(`Start pin confirmed: ${res.distanceFromNitkKm}km from NITK (${res.snapDistanceMeters}m road snap)`);
       setDraftOrigin(null);
       setPinPlacementMode(false);
-      setTimeout(() => {
-        setPinState('IDLE');
-        setOriginFeedback(null);
-      }, 4000);
+
     } catch (err: any) {
-      setPinState('ERROR');
-      setOriginFeedback(err.message || 'Failed to confirm origin');
+      setPinState('READY_TO_CONFIRM');
+      setOriginFeedback(err.message || 'Failed to confirm origin. Retry or select a new point.');
     }
   };
 
   const handleCancelPinPlacement = () => {
+    previewSequence.current += 1;
     setDraftOrigin(null);
     setPinState('IDLE');
     setPinPlacementMode(false);
@@ -615,7 +630,7 @@ export const LiveMap: React.FC<LiveMapProps> = ({
           </button>
 
           {/* Choose Ambulance Start Pin (Stage 6) */}
-          <button
+          <button disabled={pinState === 'SAVING'}
             onClick={() => {
               if (pinPlacementMode) {
                 handleCancelPinPlacement();
@@ -657,6 +672,18 @@ export const LiveMap: React.FC<LiveMapProps> = ({
         </div>
       </div>
 
+      {pinPlacementMode && pinState !== 'SAVING' && (
+        <form aria-label="Choose origin coordinates" className="relative z-20 flex flex-wrap items-end gap-2 bg-white border rounded p-3"
+          onSubmit={(event) => { event.preventDefault(); void validateOriginRef.current(Number(coordinateInput.lat), Number(coordinateInput.lng)); }}>
+          <label>Latitude<input aria-label="Origin latitude" type="number" step="any" min="-90" max="90" required value={coordinateInput.lat}
+            onChange={(e) => setCoordinateInput({ ...coordinateInput, lat: e.target.value })} className="block border rounded p-1 w-32" /></label>
+          <label>Longitude<input aria-label="Origin longitude" type="number" step="any" min="-180" max="180" required value={coordinateInput.lng}
+            onChange={(e) => setCoordinateInput({ ...coordinateInput, lng: e.target.value })} className="block border rounded p-1 w-32" /></label>
+          <button type="submit" className="border rounded p-2">Check coordinates</button>
+          <button type="button" onClick={handleCancelPinPlacement} className="border rounded p-2">Cancel pin</button>
+        </form>
+      )}
+
       {/* Origin Pin Feedback Toast */}
       {originFeedback && (
         <div className="absolute top-16 left-1/2 -translate-x-1/2 z-20 bg-slate-900/90 text-white text-xs px-4 py-2 rounded-xl border border-slate-700 shadow-lg flex items-center gap-2 animate-fade-in">
@@ -673,7 +700,7 @@ export const LiveMap: React.FC<LiveMapProps> = ({
               Draft Origin: {draftOrigin.distanceFromNitkKm} km from NITK
             </span>
             <span className="text-[10px] text-slate-300">
-              Snapped {draftOrigin.snapDistanceMeters}m to road segment
+              Road adjustment: {draftOrigin.snapDistanceMeters}m
             </span>
           </div>
           <div className="flex items-center gap-2">

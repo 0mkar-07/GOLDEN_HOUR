@@ -166,7 +166,7 @@ describe('Phase 10 — Connected Simulation and Digital Twin Engine', () => {
 
     expect(resetRes.statusCode).toBe(200);
     expect(resetRes.json().simulationRun.simulatedSeconds).toBe(0);
-    expect(store.ambulancePosition.x).toBe(120);
-    expect(store.ambulancePosition.y).toBe(150);
+    expect(store.ambulancePosition.x).toBe(0);
+    expect(store.ambulancePosition.y).toBe(0);
   });
 });
