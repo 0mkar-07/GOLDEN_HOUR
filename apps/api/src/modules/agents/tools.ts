@@ -15,12 +15,17 @@ export interface HospitalReadinessSummary {
   staff: Array<{
     specialty: string;
     availableTeamSlots: number;
+    readyAt?: string;
   }>;
   surgicalServices: {
     theatresActive: number;
     electiveSupported: boolean | null;
     emergencySupported: boolean | null;
+    turnoverWaitSeconds?: number;
   };
+  serviceReadyAtSeconds?: Record<string, number>;
+  limitingReason?: string;
+  roadAccessPoint?: { lat: number; lng: number };
 }
 
 /**
@@ -59,12 +64,17 @@ export const agentTools = {
       staff: staff.map((s) => ({
         specialty: s.specialty,
         availableTeamSlots: s.availableTeamSlots,
+        readyAt: s.readyAt,
       })),
       surgicalServices: {
         theatresActive: theatres.filter((t) => t.active).length,
         electiveSupported: hosp.surgicalSummary?.electiveSupported ?? null,
         emergencySupported: hosp.surgicalSummary?.emergencySupported ?? null,
+        turnoverWaitSeconds: (hosp as any).serviceReadyAtSeconds?.OPERATING_THEATRE ?? 0,
       },
+      serviceReadyAtSeconds: (hosp as any).serviceReadyAtSeconds,
+      limitingReason: (hosp as any).limitingReason,
+      roadAccessPoint: (hosp as any).roadAccessPoint,
     };
   },
 

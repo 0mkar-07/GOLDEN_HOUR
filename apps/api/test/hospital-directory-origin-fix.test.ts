@@ -55,7 +55,9 @@ describe('Canonical hospital accounts and origin placement', () => {
     const preview = store.previewAmbulanceOrigin(lat, lng);
     expect(preview.validationStatus).toBe('ACCEPTED');
     expect(preview.resolved!.lat).toBeCloseTo(lat, 7);
+    store.caseRouteSnapshots.set('stale-case', { origin: { lat: 0, lng: 0 } });
     const result = store.setAmbulanceOrigin(lat, lng, preview.runVersion, preview.validationId, 'midpoint');
+    expect(store.caseRouteSnapshots.size).toBe(0);
     simulationService.reset(false);
     expect(store.ambulancePosition.lat).toBeCloseTo(lat, 7);
     expect(store.ambulancePosition.x).toBeCloseTo(projectToNitkMetric(lat, lng).x / 10, 0);

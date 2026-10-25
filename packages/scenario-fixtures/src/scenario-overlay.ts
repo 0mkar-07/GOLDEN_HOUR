@@ -60,13 +60,44 @@ export function getHospitalOperationalOverlay(
   }
 
   if (cleanId === 'PADMAVATHI_SURATHKAL') {
+    const isTheatreOccupied =
+      seed.includes('theatre-unavailable') ||
+      seed.includes('theatre-busy') ||
+      seed === 'scenario-6-theatre-unavailable';
+
+    if (isTheatreOccupied) {
+      return {
+        hospitalId,
+        profile: 'THEATRE_OCCUPIED',
+        intakeServiceSeconds: 240,
+        queueEstimatedWaitSeconds: 1440,
+        serviceReadyAtSeconds: {
+          OPERATING_THEATRE: 1860,
+          GENERAL_SURGERY: 1860,
+          STABILIZATION: 0,
+          BASIC_OXYGEN: 0,
+        },
+        limitingReason: 'Emergency surgery in progress; OR turnover delayed (~31m readiness, care start ~35m)',
+        roadAccessPoint: { lat: 13.0045, lng: 74.7962 },
+        provenance: `synthetic_scenario_overlay:seed=${seed}`,
+      };
+    }
+
+    const isTeachingScenario = seed.startsWith('scenario-');
     return {
       hospitalId,
       profile: 'LOW_LOAD_STABILIZATION',
-      intakeServiceSeconds: 75,
+      intakeServiceSeconds: isTeachingScenario ? 240 : 75,
       queueEstimatedWaitSeconds: 0,
-      serviceReadyAtSeconds: { STABILIZATION: 0, BASIC_OXYGEN: 0, CT_SCAN: 0, EMERGENCY_DEPT: 0 },
-      limitingReason: 'Urgent stabilization bay ready now; low emergency load',
+      serviceReadyAtSeconds: {
+        STABILIZATION: 0,
+        BASIC_OXYGEN: 0,
+        CT_SCAN: 0,
+        EMERGENCY_DEPT: 0,
+        OPERATING_THEATRE: 0,
+        GENERAL_SURGERY: 0,
+      },
+      limitingReason: 'Urgent emergency bay and compatible surgical team ready now',
       roadAccessPoint: { lat: 13.0045, lng: 74.7962 },
       provenance: `synthetic_scenario_overlay:seed=${seed}`,
     };
@@ -99,14 +130,17 @@ export function getHospitalOperationalOverlay(
   }
 
   if (cleanId === 'AJ_HOSPITAL' || cleanId === 'AJ_HOSPITAL_MANGALURU') {
+    const isTeachingScenario = seed.startsWith('scenario-');
     return {
       hospitalId,
       profile: 'SPECIALIST_ON_CALL',
-      intakeServiceSeconds: 150,
+      intakeServiceSeconds: isTeachingScenario ? 240 : 150,
       queueEstimatedWaitSeconds: 120,
       serviceReadyAtSeconds: {
         NEUROSURGERY: 480, // 8 minutes on-call neurotrauma team arrival
         TRAUMA_L1: 300,    // 5 minutes trauma suite prep
+        OPERATING_THEATRE: 240,
+        GENERAL_SURGERY: 240,
         ICU: 0,
         CARDIAC_CATH: 0,
         CT_SCAN: 0,
@@ -245,6 +279,8 @@ export function applyHospitalOperationalOverlay(
     intakeServiceSeconds: overlay.intakeServiceSeconds,
     receivingDelaySeconds: overlay.intakeServiceSeconds, // Backwards compatible with existing consumers
     queueEstimatedWaitSeconds: overlay.queueEstimatedWaitSeconds,
+    serviceReadyAtSeconds: overlay.serviceReadyAtSeconds,
+    limitingReason: overlay.limitingReason,
     roadAccessPoint: {
       ...hospital.location,
       lat: overlay.roadAccessPoint.lat,

@@ -52,6 +52,11 @@ export const TimingBreakdownCard: React.FC<{
   const careStartSec = candidate.timeToCareSeconds;
   const limiting = candidate.limitingReason;
 
+  const immCareSec = candidate.immediateCareStartSeconds;
+  const defCareSec = candidate.definitiveCareStartSeconds;
+  const theatreWait = candidate.theatreWaitSeconds ?? 0;
+  const teamReady = candidate.specialistTeamReady;
+
   return (
     <div className="p-3 bg-[#F6F8F8] rounded-xl border border-[#DCE5E3] space-y-2 text-xs">
       <div className="grid grid-cols-2 gap-y-1.5 gap-x-2 text-[#596B69]">
@@ -66,15 +71,37 @@ export const TimingBreakdownCard: React.FC<{
           <span className="font-bold text-[#237048]">{formatDuration(travelSec)}</span>
         </div>
         <div className="flex justify-between items-center">
-          <span>Post-Arrival Wait:</span>
-          <span className={waitSec > 0 ? 'text-[#8A5800] font-bold' : 'text-[#172B2A]'}>
-            {waitSec > 0 ? `+${formatDuration(waitSec)}` : '0m (Immediate)'}
-          </span>
-        </div>
-        <div className="flex justify-between items-center">
           <span>Intake Delay:</span>
           <span className="text-[#172B2A]">+{formatDuration(intakeSec)}</span>
         </div>
+        <div className="flex justify-between items-center">
+          <span>Service Readiness:</span>
+          <span
+            className={
+              candidate.theatreReady === false || theatreWait > 0 || teamReady === false
+                ? 'text-[#8A5800] font-bold'
+                : 'text-[#237048] font-semibold'
+            }
+          >
+            {theatreWait > 0
+              ? `+${formatDuration(theatreWait)} turnover`
+              : teamReady === false
+              ? 'Team on-call / mobilizing'
+              : 'Ready now'}
+          </span>
+        </div>
+        {immCareSec !== null && immCareSec !== undefined && (
+          <div className="flex justify-between items-center col-span-2 pt-1 border-t border-[#E2E8F0]">
+            <span className="text-[#596B69]">Immediate Stabilisation:</span>
+            <span className="font-bold text-[#176B68]">~{formatDuration(immCareSec)}</span>
+          </div>
+        )}
+        {defCareSec !== null && defCareSec !== undefined && (
+          <div className="flex justify-between items-center col-span-2">
+            <span className="text-[#596B69]">Definitive Care Start:</span>
+            <span className="font-bold text-[#174C49]">~{formatDuration(defCareSec)}</span>
+          </div>
+        )}
       </div>
 
       <div className="pt-2 border-t border-[#DCE5E3] flex justify-between items-center text-xs font-bold">
@@ -220,19 +247,86 @@ export const RecommendationPanel: React.FC<RecommendationPanelProps> = ({
         </div>
       </div>
 
-      {/* Why This Recommendation Changed Banner */}
+      {/* Confirmed Care Objective & Pathway Banner */}
+      <div
+        className={`p-4 rounded-xl border flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xs ${
+          recommendation.selectedPathway === 'STABILIZE_THEN_TRANSFER'
+            ? 'bg-[#FFF8E6] border-[#F3E5AB] text-[#8A5800]'
+            : 'bg-[#EAF5F2] border-[#DCE5E3] text-[#174C49]'
+        }`}
+      >
+        <div className="flex items-start gap-3">
+          <div className="p-2 bg-white rounded-lg border border-current shrink-0">
+            {recommendation.selectedPathway === 'STABILIZE_THEN_TRANSFER' ? (
+              <AlertTriangle className="w-5 h-5 text-[#8A5800]" />
+            ) : (
+              <ShieldCheck className="w-5 h-5 text-[#176B68]" />
+            )}
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold uppercase tracking-wider">
+                {recommendation.selectedPathway === 'STABILIZE_THEN_TRANSFER'
+                  ? 'Confirmed Care Objective: Immediate Stabilisation First'
+                  : 'Confirmed Care Objective: Direct Definitive Care'}
+              </span>
+              {recommendation.assessmentVersion && (
+                <span className="px-1.5 py-0.5 rounded bg-white text-[10px] font-mono font-bold border border-current">
+                  Assessment v{recommendation.assessmentVersion}
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-[#172B2A] mt-0.5">
+              {recommendation.selectedPathway === 'STABILIZE_THEN_TRANSFER'
+                ? 'Immediate stabilisation is recommended under the confirmed plan; definitive specialist treatment remains a separate next step.'
+                : 'Direct transport to definitive care facility is permitted under clinical assessment.'}
+            </p>
+          </div>
+        </div>
+
+        {recommendation.onwardTransfer && (
+          <div className="bg-white px-3 py-2 rounded-lg border border-[#F3E5AB] text-xs space-y-0.5 shrink-0">
+            <span className="text-[10px] font-bold text-[#596B69] uppercase tracking-wider block">
+              Subsequent Definitive Target
+            </span>
+            <span className="font-bold text-[#172B2A] block">
+              {recommendation.onwardTransfer.destinationName || recommendation.onwardTransfer.destinationHospitalId}
+            </span>
+            <span className="text-[10px] text-[#8A5800] block italic">
+              Onward transfer timing not confirmed
+            </span>
+          </div>
+        )}
+      </div>
+
+      {/* Why This Recommendation Changed Banner & Reason Code Pills */}
       {recommendation.whyChanged && (
         <div className="p-3.5 bg-[#EFF8FF] border border-[#B2DDFF] rounded-xl flex items-start gap-3 shadow-xs">
           <div className="p-1.5 bg-white rounded-lg border border-[#B2DDFF] text-[#175CD3] shrink-0 mt-0.5">
             <Info className="w-4 h-4" />
           </div>
-          <div className="space-y-0.5">
+          <div className="space-y-1 flex-1">
             <span className="text-[11px] font-bold uppercase tracking-wider text-[#175CD3]">
               Why Recommendation Changed
             </span>
             <p className="text-xs text-[#182230] leading-relaxed font-medium">
               {recommendation.whyChanged}
             </p>
+            {recommendation.policyReasonCodes && recommendation.policyReasonCodes.length > 0 && (
+              <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                <span className="text-[10px] font-bold text-[#596B69] uppercase tracking-wider mr-1">
+                  Policy Decisions:
+                </span>
+                {recommendation.policyReasonCodes.map((code) => (
+                  <span
+                    key={code}
+                    className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-white text-[#175CD3] border border-[#B2DDFF]"
+                  >
+                    {code}
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -486,14 +580,14 @@ export const RecommendationPanel: React.FC<RecommendationPanelProps> = ({
       ) : (
         /* Standard 3-Column Recommendations Grid when Full-Care Hospital A is available */
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-          {/* Destination A: Primary Full-Care Hospital */}
+          {/* Destination A: Recommended Definitive-Care Option */}
           <div className="bg-white border-2 border-[#176B68] rounded-2xl overflow-hidden shadow-xs flex flex-col justify-between">
             <div className="bg-[#EAF5F2] px-4 py-3 border-b border-[#DCE5E3] flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <span className="px-2 py-0.5 rounded-full bg-[#174C49] text-white text-[10px] font-bold uppercase tracking-wider">
-                  Primary (A)
+                  Recommended now • Primary (A)
                 </span>
-                <span className="text-xs font-bold text-[#172B2A]">Full Definitive Care</span>
+                <span className="text-xs font-bold text-[#172B2A]">Definitive-care option</span>
               </div>
               <span className="text-xs px-2 py-0.5 rounded-md font-semibold bg-white border border-[#DCE5E3] text-[#176B68]">
                 {hospitalA?.code || 'N/A'}
@@ -572,7 +666,9 @@ export const RecommendationPanel: React.FC<RecommendationPanelProps> = ({
                   className="w-full py-2.5 bg-[#174C49] hover:bg-[#135552] disabled:opacity-50 text-white font-semibold text-xs rounded-xl shadow-xs transition flex items-center justify-center gap-2"
                 >
                   <Send className="w-3.5 h-3.5" />
-                  {dispatching ? 'Dispatching & Notifying...' : 'Dispatch Ambulance to Hospital A'}
+                  {dispatching
+                    ? 'Dispatching & Notifying...'
+                    : `Dispatch Ambulance to Hospital A (${hospitalA.name} - Recommended)`}
                 </button>
               )}
             </div>
@@ -583,9 +679,9 @@ export const RecommendationPanel: React.FC<RecommendationPanelProps> = ({
             <div className="bg-white px-4 py-3 border-b border-[#DCE5E3] flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <span className="px-2 py-0.5 rounded-full bg-[#EAF5F2] text-[#176B68] border border-[#DCE5E3] text-[10px] font-bold uppercase tracking-wider">
-                  Backup (B)
+                  Contingency • Backup (B)
                 </span>
-                <span className="text-xs font-bold text-[#172B2A]">Immediate Stabilization</span>
+                <span className="text-xs font-bold text-[#172B2A]">Immediate Stabilisation Option</span>
               </div>
               <span className="text-xs px-2 py-0.5 rounded-md font-semibold bg-[#F6F8F8] border border-[#DCE5E3] text-[#596B69]">
                 {hospitalB?.code || 'N/A'}
@@ -651,7 +747,7 @@ export const RecommendationPanel: React.FC<RecommendationPanelProps> = ({
             <div className="bg-white px-4 py-3 border-b border-[#DCE5E3] flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <span className="px-2 py-0.5 rounded-full bg-[#F6F8F8] text-[#596B69] border border-[#DCE5E3] text-[10px] font-bold uppercase tracking-wider">
-                  Backup (C)
+                  Contingency • Backup (C)
                 </span>
                 <span className="text-xs font-bold text-[#172B2A]">Secondary Contingency</span>
               </div>

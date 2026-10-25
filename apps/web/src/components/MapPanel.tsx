@@ -37,6 +37,7 @@ interface MapPanelProps {
   graph?: RoadGraphDto;
   isSharingGps?: boolean;
   onToggleShareGps?: () => void;
+  onOriginChanged?: (position: { lat: number; lng: number }) => void;
   className?: string;
 }
 

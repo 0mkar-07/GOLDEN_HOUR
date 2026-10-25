@@ -6,7 +6,35 @@ import {
   DestinationReadiness,
   DestinationActor,
 } from './enums.js';
-import { CareObjectiveEnum, type CareObjective } from './recommendation.js';
+import {
+  CareObjectiveEnum,
+  type CareObjective,
+  ClinicalStabilityEnum,
+  type ClinicalStability,
+  ConditionTrendEnum,
+  type ConditionTrend,
+  TransportAssessmentEnum,
+  type TransportAssessment,
+  SelectedPathwayEnum,
+  type SelectedPathway,
+  RequiredInterventionEnum,
+  type RequiredIntervention,
+} from './pathway.js';
+
+export {
+  CareObjectiveEnum,
+  type CareObjective,
+  ClinicalStabilityEnum,
+  type ClinicalStability,
+  ConditionTrendEnum,
+  type ConditionTrend,
+  TransportAssessmentEnum,
+  type TransportAssessment,
+  SelectedPathwayEnum,
+  type SelectedPathway,
+  RequiredInterventionEnum,
+  type RequiredIntervention,
+};
 
 export const VitalSignsSchema = z.object({
   heartRate: z.number().nullable().optional(),
@@ -19,12 +47,41 @@ export const VitalSignsSchema = z.object({
 
 export type VitalSignsDto = z.infer<typeof VitalSignsSchema>;
 
+export const MissingEvidenceItemSchema = z.object({
+  field: z.string(),
+  reason: z.enum(['ABSENT', 'NULL', 'STALE', 'CONTRADICTORY', 'INVALID']),
+  description: z.string(),
+});
+export type MissingEvidenceItem = z.infer<typeof MissingEvidenceItemSchema>;
+
+export const CareRequirementItemSchema = z.object({
+  capability: z.string(),
+  priority: z.enum(['IMMEDIATE', 'DEFINITIVE']),
+  reason: z.string(),
+  dependencies: z.array(z.string()).default([]),
+  source: z.string().optional(),
+});
+export type CareRequirementItem = z.infer<typeof CareRequirementItemSchema>;
+
+export const TimeConstraintSchema = z.object({
+  constraintType: z.enum(['ARRIVAL', 'INTERVENTION_START', 'DEFINITIVE_CARE']),
+  maxDurationSeconds: z.number().int().nonnegative(),
+  scope: z.string(),
+  author: z.string(),
+  policySource: z.string(),
+});
+export type TimeConstraint = z.infer<typeof TimeConstraintSchema>;
+
 export const AssessmentObservationsSchema = z.object({
   presentingIssue: z.string(),
   urgencyLevel: z.enum(['CRITICAL', 'URGENT', 'STABLE']),
   vitals: VitalSignsSchema,
   notes: z.string().optional(),
   ambulanceSupportProvided: z.array(z.string()).default([]),
+  clinicalStability: ClinicalStabilityEnum.optional(),
+  conditionTrend: ConditionTrendEnum.optional(),
+  observationTime: z.string().optional(),
+  priorObservationIds: z.array(z.string()).optional(),
 });
 
 export type AssessmentObservationsDto = z.infer<typeof AssessmentObservationsSchema>;
@@ -42,6 +99,23 @@ export const AssessmentSchema = z.object({
   confirmedAt: z.string().nullable().optional(),
   confirmedBy: z.string().nullable().optional(),
   createdAt: z.string(),
+
+  // Structured Patient State & Pathway Fields (Stage 2)
+  proposedClinicalStability: ClinicalStabilityEnum.default('UNKNOWN').optional(),
+  confirmedClinicalStability: ClinicalStabilityEnum.default('UNKNOWN').optional(),
+  proposedConditionTrend: ConditionTrendEnum.default('UNKNOWN').optional(),
+  confirmedConditionTrend: ConditionTrendEnum.default('UNKNOWN').optional(),
+  proposedTransportAssessment: TransportAssessmentEnum.default('REVIEW_REQUIRED').optional(),
+  confirmedTransportAssessment: TransportAssessmentEnum.default('REVIEW_REQUIRED').optional(),
+  proposedPathway: SelectedPathwayEnum.default('REVIEW_REQUIRED').optional(),
+  confirmedPathway: SelectedPathwayEnum.default('REVIEW_REQUIRED').optional(),
+  requiredIntervention: RequiredInterventionEnum.default('UNKNOWN').optional(),
+  immediateRequirements: z.array(CareRequirementItemSchema).default([]).optional(),
+  definitiveRequirements: z.array(CareRequirementItemSchema).default([]).optional(),
+  timeConstraints: z.array(TimeConstraintSchema).default([]).optional(),
+  missingEvidence: z.array(MissingEvidenceItemSchema).default([]).optional(),
+  policyVersion: z.string().optional(),
+  overrideReason: z.string().nullable().optional(),
 });
 
 export type AssessmentDto = z.infer<typeof AssessmentSchema>;
@@ -75,8 +149,14 @@ export type SubmitAssessmentRequest = z.infer<typeof SubmitAssessmentRequestSche
 
 export const ConfirmRequirementsRequestSchema = z.object({
   assessmentVersion: z.number().int().positive(),
-  confirmedFullCareNeeds: z.array(z.string()).min(1),
-  confirmedStabilizationNeeds: z.array(z.string()).min(1),
+  confirmedFullCareNeeds: z.array(z.string()).default([]),
+  confirmedStabilizationNeeds: z.array(z.string()).default([]),
+  confirmedPathway: SelectedPathwayEnum.optional(),
+  confirmedTransportAssessment: TransportAssessmentEnum.optional(),
+  confirmedClinicalStability: ClinicalStabilityEnum.optional(),
+  confirmedConditionTrend: ConditionTrendEnum.optional(),
+  requiredIntervention: RequiredInterventionEnum.optional(),
+  overrideReason: z.string().optional(),
 });
 
 export type ConfirmRequirementsRequest = z.infer<typeof ConfirmRequirementsRequestSchema>;
@@ -88,6 +168,15 @@ export const Agent1ProposalSchema = z.object({
   missingInputs: z.array(z.string()),
   interpreterType: z.enum(['GEMINI_LLM', 'DETERMINISTIC_RULES']).optional(),
   confidence: z.number().min(0).max(1).optional(),
+  proposedClinicalStability: ClinicalStabilityEnum.default('UNKNOWN').optional(),
+  proposedConditionTrend: ConditionTrendEnum.default('UNKNOWN').optional(),
+  proposedTransportAssessment: TransportAssessmentEnum.default('REVIEW_REQUIRED').optional(),
+  proposedPathway: SelectedPathwayEnum.default('REVIEW_REQUIRED').optional(),
+  requiredIntervention: RequiredInterventionEnum.default('UNKNOWN').optional(),
+  immediateRequirements: z.array(CareRequirementItemSchema).default([]).optional(),
+  definitiveRequirements: z.array(CareRequirementItemSchema).default([]).optional(),
+  missingEvidence: z.array(MissingEvidenceItemSchema).default([]).optional(),
+  policyReasonCodes: z.array(z.string()).default([]).optional(),
 });
 
 export type Agent1Proposal = z.infer<typeof Agent1ProposalSchema>;

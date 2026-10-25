@@ -1,8 +1,49 @@
+# Installed dependencies and local package caches
 node_modules/
+.pnpm-store/
+
+# Generated builds and compiler caches
 dist/
+build/
+*.tsbuildinfo
+.vite/
+.cache/
+.turbo/
+
+# Local environment files at any package depth
 .env
-.env.local
+.env.*
+!.env.example
+!.env.*.example
+
+# Test output
+coverage/
+playwright-report/
+test-results/
+
+# Generated exports and temporary output
+/output/
+/out/
+/tmp/
+/temp/
+
+# Local database/backup files; SQL migration source remains tracked
+*.sqlite
+*.sqlite3
+*.db
+*.db-journal
+*.sqlite-wal
+*.sqlite-shm
+*.sqlite3-wal
+*.sqlite3-shm
+*.db-wal
+*.db-shm
+*.dump
+*.bak
+/backups/
+
+# Logs and machine-specific files
+*.log
 .DS_Store
 Thumbs.db
-coverage/
-*.log
+.idea/

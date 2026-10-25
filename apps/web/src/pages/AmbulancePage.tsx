@@ -61,52 +61,100 @@ interface ScenarioPreset {
 
 const DEMO_SCENARIOS: ScenarioPreset[] = [
   {
-    name: 'Scenario 1: Polytrauma + Severe TBI (Mandates Level 1 Trauma)',
-    patientLabel: 'John Doe, 34M — High-Speed Collision',
-    presentingIssue: 'Polytrauma following rollover motor vehicle collision with prolonged extrication',
-    urgencyLevel: 'CRITICAL',
-    vitals: {
-      heartRate: 132,
-      systolicBp: 82,
-      diastolicBp: 48,
-      respiratoryRate: 28,
-      oxygenSaturation: 88,
-      gcs: 7,
-    },
-    ambulanceSupportProvided: ['C-spine collar', 'Bag-valve-mask with 100% O2', '18G IV saline bolus'],
-    notes: 'Depressed skull fracture with active intracranial hemorrhage. Intubation indicated. Requires Level 1 Trauma + 24/7 Neurosurgery.',
-  },
-  {
-    name: 'Scenario 2: Acute STEMI / Anterior Infarction (Mandates Cath Lab)',
-    patientLabel: 'Robert Miller, 61M — Crushing Chest Pain',
-    presentingIssue: 'Severe retrosternal crushing pain radiating to left jaw, diaphoresis, acute onset 40m ago',
-    urgencyLevel: 'CRITICAL',
-    vitals: {
-      heartRate: 110,
-      systolicBp: 145,
-      diastolicBp: 92,
-      respiratoryRate: 22,
-      oxygenSaturation: 94,
-      gcs: 15,
-    },
-    ambulanceSupportProvided: ['Aspirin 324mg PO', 'Sublingual Nitroglycerin x2', '12-lead ECG transmitting'],
-    notes: 'Prehospital 12-lead shows 4mm ST elevations across V1-V4. Urgent Primary Percutaneous Coronary Intervention (PCI) required.',
-  },
-  {
-    name: 'Scenario 3: Incomplete Telemetry / Explicit Unknowns (Agent 1 surfaces gaps)',
-    patientLabel: 'Unknown Female, ~50s — Found Down in Alley',
-    presentingIssue: 'Unresponsive patient found on sidewalk by bystanders. Incomplete history.',
-    urgencyLevel: 'URGENT',
+    name: 'Case 1: Stable patient needing specialist service',
+    patientLabel: 'Case 1 - Motor vehicle accident, intracranial hemorrhage (Stable)',
+    presentingIssue: 'Motor vehicle accident with focal neurological deficit and suspected intracranial hemorrhage.',
+    urgencyLevel: 'STABLE',
     vitals: {
       heartRate: 78,
-      systolicBp: null,
-      diastolicBp: null,
-      respiratoryRate: null,
-      oxygenSaturation: null,
-      gcs: null,
+      systolicBp: 124,
+      diastolicBp: 78,
+      respiratoryRate: 16,
+      oxygenSaturation: 98,
+      gcs: 14,
     },
-    ambulanceSupportProvided: ['Passive warming blanket'],
-    notes: 'Severe shivering, cuff error prevented BP measurement in field. Vitals partially unknown.',
+    ambulanceSupportProvided: ['C-collar applied', 'IV line established'],
+    notes: 'Compare current hospital capabilities and routes. No destination is predetermined.',
+  },
+  {
+    name: 'Case 2: Urgent general surgical case',
+    patientLabel: 'Case 2 - Blunt abdominal trauma with peritoneal signs (Urgent)',
+    presentingIssue: 'Blunt abdominal trauma with acute surgical abdomen and peritoneal signs; hemodynamically compensated.',
+    urgencyLevel: 'URGENT',
+    vitals: {
+      heartRate: 98,
+      systolicBp: 110,
+      diastolicBp: 70,
+      respiratoryRate: 20,
+      oxygenSaturation: 96,
+      gcs: 15,
+    },
+    ambulanceSupportProvided: ['Normal saline infusing', 'Oxygen via nasal cannula'],
+    notes: 'Compare arrival time and current theatre readiness across the regional directory.',
+  },
+  {
+    name: 'Case 3: Critical patient needing specialist service',
+    patientLabel: 'Case 3 - Unresponsive pedestrian, severe TBI & pupil dilation (Critical)',
+    presentingIssue: 'Pedestrian struck by heavy vehicle; unresponsive, unilateral dilated pupil, severe traumatic brain injury.',
+    urgencyLevel: 'CRITICAL',
+    vitals: {
+      heartRate: 122,
+      systolicBp: 90,
+      diastolicBp: 56,
+      respiratoryRate: 26,
+      oxygenSaturation: 91,
+      gcs: 6,
+    },
+    ambulanceSupportProvided: ['Endotracheal tube secured', 'C-spine immobilized', 'High-flow O2'],
+    notes: 'Assess specialist requirements and transport suitability before choosing a destination.',
+  },
+  {
+    name: 'Case 4: Deteriorating patient: stabilization assessment',
+    patientLabel: 'Case 4 - Acute respiratory collapse & shock in transit (Deteriorating)',
+    presentingIssue: 'Acute respiratory collapse and worsening refractory shock in transit.',
+    urgencyLevel: 'CRITICAL',
+    vitals: {
+      heartRate: 136,
+      systolicBp: 72,
+      diastolicBp: 44,
+      respiratoryRate: 34,
+      oxygenSaturation: 82,
+      gcs: 9,
+    },
+    ambulanceSupportProvided: ['High-flow O2 non-rebreather', 'Push-dose epinephrine'],
+    notes: 'Review immediate stabilization needs and transport suitability.',
+  },
+  {
+    name: 'Case 5: Immediate resuscitation requirements',
+    patientLabel: 'Case 5 - Penetrating thoracic trauma with active hemorrhage (Critical)',
+    presentingIssue: 'Severe penetrating trauma with active thoracic hemorrhage requiring immediate surgical chest tube / bay.',
+    urgencyLevel: 'CRITICAL',
+    vitals: {
+      heartRate: 128,
+      systolicBp: 84,
+      diastolicBp: 52,
+      respiratoryRate: 28,
+      oxygenSaturation: 89,
+      gcs: 13,
+    },
+    ambulanceSupportProvided: ['Occlusive dressing', 'Large-bore IV'],
+    notes: 'Exclude facilities that cannot provide the confirmed immediate intervention.',
+  },
+  {
+    name: 'Case 6: Urgent surgery: compare current theatre readiness',
+    patientLabel: 'Case 6 - Acute surgical abdomen (compare theatre readiness)',
+    presentingIssue: 'Acute surgical abdomen requiring emergency operating room access.',
+    urgencyLevel: 'URGENT',
+    vitals: {
+      heartRate: 94,
+      systolicBp: 114,
+      diastolicBp: 74,
+      respiratoryRate: 18,
+      oxygenSaturation: 97,
+      gcs: 15,
+    },
+    ambulanceSupportProvided: ['Analgesia administered', 'IV maintenance'],
+    notes: 'Use current theatre availability; this preset does not mark a hospital theatre busy.',
   },
 ];
 
@@ -180,11 +228,15 @@ export const AmbulancePage: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
+  const routeRequest = useRef(0);
+  const patientReset = useRef(false);
+
   // Load Geographic Routes
   const loadRoutes = useCallback(async (caseId: string) => {
     try {
+      const request = routeRequest.current;
       const res = await apiClient.getCaseRoutes(caseId);
-      if (res?.routes) {
+      if (request === routeRequest.current && res?.routes) {
         setCaseRoutes(res.routes);
       }
     } catch (err) {
@@ -199,6 +251,7 @@ export const AmbulancePage: React.FC = () => {
       if (res?.cases && res.cases.length > 0) {
         const latest = res.cases[res.cases.length - 1];
         const detail = await apiClient.getCase(latest.id);
+        if (patientReset.current) return;
         setActiveCase(detail.case);
         if (detail.latestAssessment) {
           setAssessment(detail.latestAssessment);
@@ -362,10 +415,12 @@ export const AmbulancePage: React.FC = () => {
   // Generate Recommendations
   const handleGenerateRecommendations = async () => {
     if (!activeCase) return;
+    const request = routeRequest.current;
     try {
       setLoading(true);
       setError(null);
       const res = await apiClient.generateRecommendations(activeCase.id);
+      if (request !== routeRequest.current) return;
       setRecommendation(res.recommendation);
       loadRoutes(activeCase.id);
       setSuccessMsg('Tri-Agent Recommendations generated with Primary A and Dynamic Backups B/C.');
@@ -375,6 +430,66 @@ export const AmbulancePage: React.FC = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  // A committed pin invalidates the old ranking and its route geometry together.
+  const handleOriginChanged = async (position: { lat: number; lng: number }) => {
+    const request = ++routeRequest.current;
+    setAmbulancePosition((previous) => ({ ...previous, ...position }));
+    setCaseRoutes({});
+    setRecommendation(null);
+    setSelectedHospitalId(null);
+    setLoading(true);
+    setError(null);
+    try {
+      if (activeCase && assessment?.clinicianConfirmed) {
+        const result = await apiClient.generateRecommendations(activeCase.id);
+        if (request !== routeRequest.current) return;
+        const routes = await apiClient.getCaseRoutes(activeCase.id);
+        if (request !== routeRequest.current) return;
+        setRecommendation(result.recommendation);
+        setCaseRoutes(routes.routes || {});
+      } else {
+        const result = await apiClient.getPreviewRoutes();
+        if (request !== routeRequest.current) return;
+        setCaseRoutes(result.routes || {});
+      }
+    } catch (err: any) {
+      if (request === routeRequest.current) setError(`Pin saved, but route refresh failed: ${err.message}. Recalculate to retry.`);
+    } finally {
+      if (request === routeRequest.current) setLoading(false);
+    }
+  };
+
+  const handleResetPatient = () => {
+    patientReset.current = true;
+    ++routeRequest.current;
+    setActiveCase(null);
+    setAssessment(null);
+    setAgent1Proposal(null);
+    setRecommendation(null);
+    setDestination(null);
+    setPriorityTicket(null);
+    setShowDeteriorationModal(false);
+    setCaseRoutes({});
+    setSelectedHospitalId(null);
+    setConfirmedFullCare([]);
+    setConfirmedStabilization([]);
+    setNewFullCareTag('');
+    setNewStabTag('');
+    setPatientLabel('');
+    setPresentingIssue('');
+    setHeartRate('');
+    setSystolicBp('');
+    setDiastolicBp('');
+    setRespiratoryRate('');
+    setOxygenSaturation('');
+    setGcs('');
+    setUrgencyLevel('URGENT');
+    setSupportItems([]);
+    setClinicalNotes('');
+    setError(null);
+    setSuccessMsg('Patient form cleared. Submit a new assessment to start a new case. Existing case records are retained.');
   };
 
   // Dispatch Ambulance (Full-Care or Stabilization Priority)
@@ -495,6 +610,14 @@ export const AmbulancePage: React.FC = () => {
 
   // Preset Applicator
   const handleApplyPreset = (sc: ScenarioPreset) => {
+    ++routeRequest.current;
+    setAssessment(null);
+    setAgent1Proposal(null);
+    setRecommendation(null);
+    setConfirmedFullCare([]);
+    setConfirmedStabilization([]);
+    setCaseRoutes({});
+    setSuccessMsg('Patient scenario loaded. Run Agent 1 and confirm the new assessment to calculate current NITK destinations.');
     setPatientLabel(sc.patientLabel);
     setPresentingIssue(sc.presentingIssue);
     setUrgencyLevel(sc.urgencyLevel);
@@ -596,6 +719,11 @@ export const AmbulancePage: React.FC = () => {
         assessmentVersion: assessment.version,
         confirmedFullCareNeeds: confirmedFullCare,
         confirmedStabilizationNeeds: confirmedStabilization,
+        confirmedPathway: agent1Proposal?.proposedPathway ?? assessment.proposedPathway,
+        confirmedTransportAssessment: agent1Proposal?.proposedTransportAssessment ?? assessment.proposedTransportAssessment,
+        confirmedClinicalStability: agent1Proposal?.proposedClinicalStability ?? assessment.proposedClinicalStability,
+        confirmedConditionTrend: agent1Proposal?.proposedConditionTrend ?? assessment.proposedConditionTrend,
+        requiredIntervention: agent1Proposal?.requiredIntervention ?? assessment.requiredIntervention,
       });
       setAssessment(res.assessment);
       setSuccessMsg('Requirements confirmed by clinician! Running destination matching...');
@@ -640,6 +768,7 @@ export const AmbulancePage: React.FC = () => {
               <span className="text-[#596B69] font-medium">Scenario Preset:</span>
               <select
                 aria-label="Preset Scenario"
+                disabled={loading || dispatching || diverting || activeCase?.caseStatus === CaseStatus.EN_ROUTE || activeCase?.caseStatus === CaseStatus.DISPATCHING}
                 onChange={(e) => {
                   const idx = parseInt(e.target.value, 10);
                   if (!isNaN(idx)) handleApplyPreset(DEMO_SCENARIOS[idx]);
@@ -655,6 +784,14 @@ export const AmbulancePage: React.FC = () => {
               </select>
             </div>
 
+            <button
+              onClick={handleResetPatient}
+              disabled={loading || dispatching || diverting || activeCase?.caseStatus === CaseStatus.EN_ROUTE || activeCase?.caseStatus === CaseStatus.DISPATCHING}
+              className="px-3 py-1.5 border border-[#DCE5E3] rounded-xl text-xs font-semibold disabled:opacity-50"
+              title="Clear patient inputs for a new case; existing records are retained. Complete active transport first."
+            >
+              Reset patient data
+            </button>
             <button
               onClick={handleCreateCase}
               disabled={loading}
@@ -985,6 +1122,12 @@ export const AmbulancePage: React.FC = () => {
               </div>
             </div>
 
+            {assessment && <div className="text-xs space-y-1 border-t pt-3">
+              <p>Proposed pathway: {agent1Proposal?.proposedPathway ?? assessment.proposedPathway ?? 'Review required'}</p>
+              <p>Transport assessment: {agent1Proposal?.proposedTransportAssessment ?? assessment.proposedTransportAssessment ?? 'Unknown'}</p>
+              <p>Required intervention: {agent1Proposal?.requiredIntervention ?? assessment.requiredIntervention ?? 'Unknown'}</p>
+              <p>Confirming locks these proposed decisions alongside the capability requirements.</p>
+            </div>}
             {/* Clinician Confirmation Button */}
             {assessment && !assessment.clinicianConfirmed && (
               <button
@@ -1001,6 +1144,9 @@ export const AmbulancePage: React.FC = () => {
 
         {/* Right Column (7 cols = ~60%): Live Geographic Map Panel */}
         <div className="lg:col-span-7 h-full min-h-[540px]">
+          {hospitalsLoading && <p role="status">Loading current NITK hospitals...</p>}
+          {hospitalsError && <p role="alert">{hospitalsError} <button onClick={reloadHospitals}>Retry hospital directory</button></p>}
+          <p className="text-xs text-[#596B69] mb-2">NITK regional directory: {hospitals.length} facilities. A/B/C are current recommendation ranks, not fixed hospital identities. Operational availability is synthetic demo data.</p>
           <MapPanel
             hospitals={hospitals}
             selectedHospitalId={selectedHospitalId}
@@ -1011,6 +1157,7 @@ export const AmbulancePage: React.FC = () => {
             routes={caseRoutes}
             isSharingGps={isSharingGps}
             onToggleShareGps={toggleShareGps}
+            onOriginChanged={handleOriginChanged}
           />
         </div>
       </div>

@@ -38,6 +38,7 @@ interface LiveMapProps {
   routes?: Record<string, SharedRouteDto>;
   isSharingGps?: boolean;
   onToggleShareGps?: () => void;
+  onOriginChanged?: (position: { lat: number; lng: number }) => void;
   className?: string;
 }
 
@@ -53,6 +54,7 @@ export const LiveMap: React.FC<LiveMapProps> = ({
   routes = {},
   isSharingGps = false,
   onToggleShareGps,
+  onOriginChanged,
   className = '',
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -340,7 +342,10 @@ export const LiveMap: React.FC<LiveMapProps> = ({
         currentMarkerMap.set(hosp.id, marker);
       } else {
         marker.setPosition({ lat: hLat, lng: hLng });
+        marker.setIcon({ url: hospSvg, scaledSize: new google.maps.Size(36, 44), anchor: new google.maps.Point(18, 44) });
+        marker.setTitle(`${roleBadge}: ${hosp.name}`);
       }
+      marker.setZIndex(isConfirmed || isA ? 1003 : isB ? 1002 : isC ? 1001 : 1);
     });
 
     // Remove old polylines
@@ -418,6 +423,20 @@ export const LiveMap: React.FC<LiveMapProps> = ({
     }
   }, [googleMapsReady, ambLat, ambLng, ambHeading, hospitals, primaryRoute, backupBRoute, followAmbulance, confirmedHospitalId, recommendation, draftOrigin]);
 
+  // Fit the directory when it arrives, then fit fresh recommendations once.
+  // Do not refit on every vehicle tick: users can still pan and zoom.
+  const facilityFitKey = hospitals.map((h) => h.id).join('|');
+  const recommendationFitKey = [recommendation?.hospitalA?.hospitalId, recommendation?.hospitalB?.hospitalId, recommendation?.hospitalC?.hospitalId].join('|');
+  useEffect(() => {
+    if (!googleMapsReady || !googleMapInstance.current || !hospitals.length) return;
+    const bounds = new (window as any).google.maps.LatLngBounds();
+    bounds.extend({ lat: ambLat, lng: ambLng });
+    const selected = hospitals.filter((h) => [recommendation?.hospitalA?.hospitalId, recommendation?.hospitalB?.hospitalId, recommendation?.hospitalC?.hospitalId].includes(h.id));
+    for (const hospital of selected.length ? selected : hospitals) bounds.extend({ lat: hospital.location.lat, lng: hospital.location.lng });
+    setFollowAmbulance(false);
+    googleMapInstance.current.fitBounds(bounds, 70);
+  }, [googleMapsReady, facilityFitKey, recommendationFitKey]);
+
   // Recenter Google Map on Ambulance
   const handleRecenterGoogle = () => {
     setFollowAmbulance(true);
@@ -454,6 +473,7 @@ export const LiveMap: React.FC<LiveMapProps> = ({
       setOriginFeedback(`Start pin confirmed: ${res.distanceFromNitkKm}km from NITK (${res.snapDistanceMeters}m road snap)`);
       setDraftOrigin(null);
       setPinPlacementMode(false);
+      onOriginChanged?.(res.snapped);
 
     } catch (err: any) {
       setPinState('READY_TO_CONFIRM');
@@ -507,6 +527,7 @@ export const LiveMap: React.FC<LiveMapProps> = ({
       ref={containerRef}
       className={`relative w-full h-full min-h-[460px] bg-[#F6F8F8] border border-[#DCE5E3] rounded-2xl overflow-hidden flex flex-col select-none ${className}`}
     >
+      <div data-testid="map-viewport" className="relative flex-1 min-h-[460px]">
       {/* 1. Real Google Maps Container (Stage 3.1) */}
       <div
         ref={googleMapDivRef}
@@ -657,7 +678,9 @@ export const LiveMap: React.FC<LiveMapProps> = ({
             onClick={async () => {
               try {
                 handleCancelPinPlacement();
-                await apiClient.resetSimulationOriginToDefault();
+                const result = await apiClient.resetSimulationOriginToDefault();
+                setCommittedPosition({ ...result.origin, at: Date.now() });
+                onOriginChanged?.(result.origin);
                 setOriginFeedback('Ambulance origin reset to NITK Surathkal default (13.0108, 74.7936)');
                 setTimeout(() => setOriginFeedback(null), 3500);
               } catch (err: any) {
@@ -671,54 +694,6 @@ export const LiveMap: React.FC<LiveMapProps> = ({
           </button>
         </div>
       </div>
-
-      {pinPlacementMode && pinState !== 'SAVING' && (
-        <form aria-label="Choose origin coordinates" className="relative z-20 flex flex-wrap items-end gap-2 bg-white border rounded p-3"
-          onSubmit={(event) => { event.preventDefault(); void validateOriginRef.current(Number(coordinateInput.lat), Number(coordinateInput.lng)); }}>
-          <label>Latitude<input aria-label="Origin latitude" type="number" step="any" min="-90" max="90" required value={coordinateInput.lat}
-            onChange={(e) => setCoordinateInput({ ...coordinateInput, lat: e.target.value })} className="block border rounded p-1 w-32" /></label>
-          <label>Longitude<input aria-label="Origin longitude" type="number" step="any" min="-180" max="180" required value={coordinateInput.lng}
-            onChange={(e) => setCoordinateInput({ ...coordinateInput, lng: e.target.value })} className="block border rounded p-1 w-32" /></label>
-          <button type="submit" className="border rounded p-2">Check coordinates</button>
-          <button type="button" onClick={handleCancelPinPlacement} className="border rounded p-2">Cancel pin</button>
-        </form>
-      )}
-
-      {/* Origin Pin Feedback Toast */}
-      {originFeedback && (
-        <div className="absolute top-16 left-1/2 -translate-x-1/2 z-20 bg-slate-900/90 text-white text-xs px-4 py-2 rounded-xl border border-slate-700 shadow-lg flex items-center gap-2 animate-fade-in">
-          <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-          <span>{originFeedback}</span>
-        </div>
-      )}
-
-      {/* Draft Origin Action Confirmation Floating Bar (Stage 6) */}
-      {draftOrigin && pinState === 'READY_TO_CONFIRM' && (
-        <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-30 bg-slate-900/95 text-white px-4 py-3 rounded-2xl border border-amber-400 shadow-2xl flex items-center gap-4 animate-fade-in">
-          <div className="flex flex-col">
-            <span className="text-xs font-bold text-amber-300">
-              Draft Origin: {draftOrigin.distanceFromNitkKm} km from NITK
-            </span>
-            <span className="text-[10px] text-slate-300">
-              Road adjustment: {draftOrigin.snapDistanceMeters}m
-            </span>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={handleConfirmOrigin}
-              className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-lg shadow-sm transition"
-            >
-              Confirm Origin Pin
-            </button>
-            <button
-              onClick={handleCancelPinPlacement}
-              className="px-2.5 py-1.5 bg-slate-700 hover:bg-slate-600 text-slate-300 text-xs rounded-lg transition"
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
-      )}
 
       {/* 3. Resilient Fallback Canvas (When Google Maps JS is loading, offline, or in test environment) */}
       {!googleMapsReady && (
@@ -786,6 +761,8 @@ export const LiveMap: React.FC<LiveMapProps> = ({
               return (
                 <g
                   key={hosp.id}
+                  data-testid={`hospital-marker-${hosp.id}`}
+                  aria-label={`${roleText}: ${hosp.name}`}
                   transform={`translate(${pos.x}, ${pos.y})`}
                   className="cursor-pointer group"
                   onClick={() => {
@@ -907,6 +884,70 @@ export const LiveMap: React.FC<LiveMapProps> = ({
           </div>
         </div>
       )}
+      </div>
+      <div className="flex flex-wrap gap-2 p-3 border-t text-xs" aria-label="Map hospital recommendations">
+        <span>{hospitals.length} facilities on map</span>
+        {(['A', 'B', 'C'] as const).map((role) => {
+          const candidate = role === 'A' ? recommendation?.hospitalA : role === 'B' ? recommendation?.hospitalB : recommendation?.hospitalC;
+          if (!candidate) return null;
+          const hospital = hospitals.find((h) => h.id === candidate.hospitalId);
+          return <button key={role} className="border rounded px-2 py-1" disabled={!hospital} onClick={() => {
+            if (!hospital) return;
+            setInspectedHospital(hospital); onSelectHospital?.(hospital.id); setFollowAmbulance(false);
+            googleMapInstance.current?.panTo({ lat: hospital.location.lat, lng: hospital.location.lng });
+          }}>{role}: {hospital?.name || 'Facility missing from current directory'}</button>;
+        })}
+      </div>
+      <div className="space-y-2 p-2 empty:hidden" aria-label="Origin pin controls">
+      {pinPlacementMode && pinState !== 'SAVING' && (
+        <form aria-label="Choose origin coordinates" className="relative z-20 flex flex-wrap items-end gap-2 bg-white border rounded p-3"
+          onSubmit={(event) => { event.preventDefault(); void validateOriginRef.current(Number(coordinateInput.lat), Number(coordinateInput.lng)); }}>
+          <label>Latitude<input aria-label="Origin latitude" type="number" step="any" min="-90" max="90" required value={coordinateInput.lat}
+            onChange={(e) => setCoordinateInput({ ...coordinateInput, lat: e.target.value })} className="block border rounded p-1 w-32" /></label>
+          <label>Longitude<input aria-label="Origin longitude" type="number" step="any" min="-180" max="180" required value={coordinateInput.lng}
+            onChange={(e) => setCoordinateInput({ ...coordinateInput, lng: e.target.value })} className="block border rounded p-1 w-32" /></label>
+          <button type="submit" className="border rounded p-2">Check coordinates</button>
+          <button type="button" onClick={handleCancelPinPlacement} className="border rounded p-2">Cancel pin</button>
+        </form>
+      )}
+
+      {/* Origin Pin Feedback Toast */}
+      {originFeedback && (
+        <div className="relative bg-slate-900/90 text-white text-xs px-4 py-2 rounded-xl border border-slate-700 shadow-lg flex items-center gap-2 animate-fade-in">
+          <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+          <span>{originFeedback}</span>
+        </div>
+      )}
+
+      {/* Draft Origin Action Confirmation Floating Bar (Stage 6) */}
+      {draftOrigin && pinState === 'READY_TO_CONFIRM' && (
+        <div className="relative bg-slate-900/95 text-white px-4 py-3 rounded-2xl border border-amber-400 shadow-2xl flex flex-wrap items-center justify-between gap-4 animate-fade-in">
+          <div className="flex flex-col">
+            <span className="text-xs font-bold text-amber-300">
+              Draft Origin: {draftOrigin.distanceFromNitkKm} km from NITK
+            </span>
+            <span className="text-[10px] text-slate-300">
+              Road adjustment: {draftOrigin.snapDistanceMeters}m
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleConfirmOrigin}
+              className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-lg shadow-sm transition"
+            >
+              Confirm Origin Pin
+            </button>
+            <button
+              onClick={handleCancelPinPlacement}
+              className="px-2.5 py-1.5 bg-slate-700 hover:bg-slate-600 text-slate-300 text-xs rounded-lg transition"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      </div>
     </div>
   );
 };

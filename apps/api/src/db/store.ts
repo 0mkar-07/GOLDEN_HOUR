@@ -157,6 +157,8 @@ class GoldenHourDatabaseStore {
       this.aliases.set(hosp.code.replace('NITK-', ''), hosp.id);
       this.aliases.set(hosp.id, hosp.id);
     }
+    this.aliases.set('nitk:AJ_HOSPITAL', 'nitk:AJ_HOSPITAL_MANGALURU');
+    this.aliases.set('AJ_HOSPITAL', 'nitk:AJ_HOSPITAL_MANGALURU');
 
     // 3. Seed Resource Pools (F-04)
     this.resourcePools.clear();
@@ -427,6 +429,8 @@ class GoldenHourDatabaseStore {
     if ((expectedRunVersion !== undefined && expectedRunVersion !== this.simulationRun.runVersion) || preview.runVersion !== this.simulationRun.runVersion) fail('VERSION_CONFLICT', 'Scenario changed. Select the point again.');
     const snapped = preview.resolved!;
     const metric = projectToNitkMetric(snapped.lat, snapped.lng);
+    this.caseRouteSnapshots.clear();
+    this.recommendations.clear();
     this.ambulanceOrigin = { ...snapped };
     this.updateAmbulancePosition(metric.x / 10, metric.y / 10, snapped.lat, snapped.lng);
     this.simulationRun.runVersion += 1;
@@ -437,6 +441,8 @@ class GoldenHourDatabaseStore {
   }
 
   public resetAmbulanceOriginToDefault(): { lat: number; lng: number } {
+    this.caseRouteSnapshots.clear();
+    this.recommendations.clear();
     this.ambulanceOrigin = { lat: NITK_REGION.centerLat, lng: NITK_REGION.centerLng };
     const metric = projectToNitkMetric(NITK_REGION.centerLat, NITK_REGION.centerLng);
     this.updateAmbulancePosition(
@@ -623,7 +629,17 @@ class GoldenHourDatabaseStore {
     caseId: string,
     observations: any,
     proposedFullCareNeeds: string[],
-    proposedStabilizationNeeds: string[]
+    proposedStabilizationNeeds: string[],
+    details?: {
+      proposedClinicalStability?: any;
+      proposedConditionTrend?: any;
+      proposedTransportAssessment?: any;
+      proposedPathway?: any;
+      requiredIntervention?: any;
+      immediateRequirements?: any[];
+      definitiveRequirements?: any[];
+      missingEvidence?: any[];
+    }
   ): AssessmentDto {
     const emergencyCase = this.cases.get(caseId);
     if (!emergencyCase) {
@@ -647,6 +663,18 @@ class GoldenHourDatabaseStore {
       confirmedAt: null,
       confirmedBy: null,
       createdAt: now,
+      proposedClinicalStability: details?.proposedClinicalStability ?? 'UNKNOWN',
+      confirmedClinicalStability: 'UNKNOWN',
+      proposedConditionTrend: details?.proposedConditionTrend ?? 'UNKNOWN',
+      confirmedConditionTrend: 'UNKNOWN',
+      proposedTransportAssessment: details?.proposedTransportAssessment ?? 'REVIEW_REQUIRED',
+      confirmedTransportAssessment: 'REVIEW_REQUIRED',
+      proposedPathway: details?.proposedPathway ?? 'REVIEW_REQUIRED',
+      confirmedPathway: 'REVIEW_REQUIRED',
+      requiredIntervention: details?.requiredIntervention ?? 'UNKNOWN',
+      immediateRequirements: details?.immediateRequirements ?? [],
+      definitiveRequirements: details?.definitiveRequirements ?? [],
+      missingEvidence: details?.missingEvidence ?? [],
     };
 
     this.assessments.set(assessmentId, assessment);
@@ -671,7 +699,15 @@ class GoldenHourDatabaseStore {
     assessmentVersion: number,
     confirmedFullCareNeeds: string[],
     confirmedStabilizationNeeds: string[],
-    confirmedByUserId: string
+    confirmedByUserId: string,
+    additionalConfirmedFields?: {
+      confirmedPathway?: any;
+      confirmedTransportAssessment?: any;
+      confirmedClinicalStability?: any;
+      confirmedConditionTrend?: any;
+      requiredIntervention?: any;
+      overrideReason?: string;
+    }
   ): AssessmentDto {
     const emergencyCase = this.cases.get(caseId);
     if (!emergencyCase) {
@@ -690,13 +726,39 @@ class GoldenHourDatabaseStore {
     }
 
     const now = new Date().toISOString();
+    const finalFullCare =
+      confirmedFullCareNeeds && confirmedFullCareNeeds.length > 0
+        ? confirmedFullCareNeeds
+        : assessment.proposedFullCareNeeds;
+    const finalStab =
+      confirmedStabilizationNeeds && confirmedStabilizationNeeds.length > 0
+        ? confirmedStabilizationNeeds
+        : assessment.proposedStabilizationNeeds;
+
     const updatedAssessment: AssessmentDto = {
       ...assessment,
-      confirmedFullCareNeeds,
-      confirmedStabilizationNeeds,
+      confirmedFullCareNeeds: finalFullCare,
+      confirmedStabilizationNeeds: finalStab,
       clinicianConfirmed: true,
       confirmedAt: now,
       confirmedBy: confirmedByUserId,
+      confirmedPathway:
+        additionalConfirmedFields?.confirmedPathway ??
+        (assessment.proposedPathway && assessment.proposedPathway !== 'REVIEW_REQUIRED'
+          ? assessment.proposedPathway
+          : 'DIRECT_DEFINITIVE'),
+      confirmedTransportAssessment:
+        additionalConfirmedFields?.confirmedTransportAssessment ??
+        (assessment.proposedTransportAssessment && assessment.proposedTransportAssessment !== 'REVIEW_REQUIRED'
+          ? assessment.proposedTransportAssessment
+          : 'DIRECT_TRANSPORT_PERMITTED'),
+      confirmedClinicalStability:
+        additionalConfirmedFields?.confirmedClinicalStability ?? assessment.proposedClinicalStability ?? 'STABLE',
+      confirmedConditionTrend:
+        additionalConfirmedFields?.confirmedConditionTrend ?? assessment.proposedConditionTrend ?? 'UNCHANGED',
+      requiredIntervention:
+        additionalConfirmedFields?.requiredIntervention ?? assessment.requiredIntervention ?? 'UNKNOWN',
+      overrideReason: additionalConfirmedFields?.overrideReason ?? null,
     };
 
     this.assessments.set(assessment.id, updatedAssessment);

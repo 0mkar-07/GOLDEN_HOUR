@@ -240,6 +240,8 @@ export const HospitalSchema = z.object({
     .optional(),
   intakeServiceSeconds: z.number().nonnegative().optional(),
   queueEstimatedWaitSeconds: z.number().nonnegative().optional(),
+  serviceReadyAtSeconds: z.record(z.number().nonnegative()).optional(),
+  limitingReason: z.string().optional(),
   roadAccessPoint: LocationSchema.optional(),
   facilityType: z
     .enum(['hospital', 'medical_college_hospital', 'nursing_home', 'campus_health_center'])

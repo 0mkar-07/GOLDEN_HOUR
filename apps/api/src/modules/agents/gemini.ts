@@ -1,6 +1,7 @@
 import { GoogleGenAI } from '@google/genai';
-import { AssessmentObservationsDto, Agent1Proposal } from '@goldenhour/contracts';
+import { AssessmentObservationsDto, Agent1Proposal, RecommendationMode } from '@goldenhour/contracts';
 import { config } from '../../config.js';
+import { runAgent1 } from './agent1.js';
 
 let genAIClient: GoogleGenAI | null = null;
 
@@ -87,13 +88,18 @@ Generate the required JSON output:
   const responseText = response.text?.trim() || '{}';
   const parsed = JSON.parse(responseText);
 
+  const baseline = runAgent1(observations);
+
   return {
-    proposedFullCareNeeds: Array.isArray(parsed.proposedFullCareNeeds) ? parsed.proposedFullCareNeeds : [],
-    proposedStabilizationNeeds: Array.isArray(parsed.proposedStabilizationNeeds)
+    ...baseline,
+    proposedFullCareNeeds: Array.isArray(parsed.proposedFullCareNeeds) && parsed.proposedFullCareNeeds.length > 0
+      ? parsed.proposedFullCareNeeds
+      : baseline.proposedFullCareNeeds,
+    proposedStabilizationNeeds: Array.isArray(parsed.proposedStabilizationNeeds) && parsed.proposedStabilizationNeeds.length > 0
       ? parsed.proposedStabilizationNeeds
-      : ['STABILIZATION', 'BASIC_OXYGEN'],
-    reasons: Array.isArray(parsed.reasons) ? parsed.reasons : ['Agent 1 Gemini Analysis Complete.'],
-    missingInputs: Array.isArray(parsed.missingInputs) ? parsed.missingInputs : [],
+      : baseline.proposedStabilizationNeeds,
+    reasons: Array.isArray(parsed.reasons) && parsed.reasons.length > 0 ? parsed.reasons : baseline.reasons,
+    missingInputs: Array.isArray(parsed.missingInputs) ? parsed.missingInputs : baseline.missingInputs,
     interpreterType: 'GEMINI_LLM',
     confidence: 0.95,
   };
@@ -110,7 +116,7 @@ export async function callGeminiCoordinatorBriefing(
   hospitalA: any,
   hospitalB: any,
   hospitalC: any,
-  recommendationMode: 'FULL_CARE_AVAILABLE' | 'STABILIZATION_ONLY' | 'NO_ELIGIBLE_DESTINATION' = 'FULL_CARE_AVAILABLE'
+  recommendationMode: RecommendationMode = 'FULL_CARE_AVAILABLE'
 ): Promise<string> {
   const isStabilizationOnly = recommendationMode === 'STABILIZATION_ONLY' || !hospitalA;
   const bEtaMins = Math.round((hospitalB?.travelSeconds || 300) / 60);

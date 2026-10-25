@@ -62,7 +62,7 @@ export const Header: React.FC = () => {
               to="/admin"
               className={({ isActive }) =>
                 `flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-semibold tracking-wide transition-colors ${
-                  isActive && !location.search.includes('tab=simulation')
+                  isActive && location.pathname === '/admin' && !location.search.includes('tab=simulation')
                     ? 'bg-[#174C49] text-white shadow-sm'
                     : 'text-[#596B69] hover:text-[#172B2A] hover:bg-[#EAF5F2]'
                 }`
@@ -85,6 +85,7 @@ export const Header: React.FC = () => {
               <Box className="w-4 h-4" />
               Simulation
             </NavLink>
+            {user?.role === UserRole.ADMIN && <NavLink to="/admin/legacy-demo" className={navLinkClass} onClick={() => setMobileMenuOpen(false)}>New York 2D demo</NavLink>}
           </nav>
 
           {/* Right Section: Health & Account Controls */}
@@ -174,7 +175,8 @@ export const Header: React.FC = () => {
                 <Box className="w-4 h-4" />
                 Simulation
               </NavLink>
-            </nav>
+              {user?.role === UserRole.ADMIN && <NavLink to="/admin/legacy-demo" className={navLinkClass} onClick={() => setMobileMenuOpen(false)}>New York 2D demo</NavLink>}
+          </nav>
 
             <div className="pt-2 border-t border-[#DCE5E3] flex flex-col gap-2">
               <div className="flex items-center justify-between">

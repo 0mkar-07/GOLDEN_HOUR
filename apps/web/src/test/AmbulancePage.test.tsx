@@ -1,6 +1,8 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, act, fireEvent } from '@testing-library/react';
 import { AmbulancePage } from '../pages/AmbulancePage';
+import { nitkHospitals } from './nitk-fixtures';
+import { apiClient } from '../lib/api-client';
 import { AuthProvider } from '../context/AuthContext';
 
 const mockCase = {
@@ -83,13 +85,13 @@ global.fetch = vi.fn().mockImplementation((url: string) => {
         Promise.resolve({
           graph: {
             nodes: [
-              { id: 'node-amb-start', label: 'Scene', x: 120, y: 150, lat: 40.71, lng: -74.02 },
-              { id: 'node-hosp-a', label: 'St Jude', x: 350, y: 150, lat: 40.7128, lng: -74.006 },
+              { id: 'node-amb-start', label: 'Scene', x: 120, y: 150, lat: 13.0108, lng: 74.7936 },
+              { id: 'node-hosp-a', label: nitkHospitals[0].name, ...nitkHospitals[0].location },
             ],
             edges: [],
           },
           trafficOverrides: {},
-          ambulancePosition: { x: 120, y: 150, lat: 40.71, lng: -74.02, speed: 0, heading: 0, serverSequence: 1, observedAt: new Date().toISOString() },
+          ambulancePosition: { x: 120, y: 150, lat: 13.0108, lng: 74.7936, speed: 0, heading: 0, serverSequence: 1, observedAt: new Date().toISOString() },
         }),
     });
   }
@@ -101,20 +103,7 @@ global.fetch = vi.fn().mockImplementation((url: string) => {
       headers: new Headers({ 'content-type': 'application/json' }),
       json: () =>
         Promise.resolve({
-          hospitals: [
-            {
-              id: 'hosp-001',
-              code: 'HOSP-A',
-              name: 'St. Jude Metropolitan Trauma Center',
-              address: '100 Central Ave',
-              location: { x: 350, y: 150, lat: 40.7128, lng: -74.006 },
-              capabilities: ['TRAUMA_L1'],
-              receivingStatus: 'OPEN',
-              receivingDelaySeconds: 120,
-              version: 1,
-              updatedAt: new Date().toISOString(),
-            },
-          ],
+          hospitals: nitkHospitals,
         }),
     });
   }
@@ -157,4 +146,37 @@ describe('Phase 4 — Ambulance Terminal & Agent 1 UI', () => {
     expect(screen.getByText('NEUROSURGERY')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Clinician Confirm Requirements/i })).toBeInTheDocument();
   });
+  it('clears patient fields and assessment without deleting stored cases', async () => {
+    await act(async () => { render(<AuthProvider><AmbulancePage /></AuthProvider>); });
+    fireEvent.click(screen.getByRole('button', { name: 'Reset patient data' }));
+    expect(screen.queryByRole('button', { name: /Clinician Confirm Requirements/i })).not.toBeInTheDocument();
+    expect(screen.queryByText('case-test-001')).not.toBeInTheDocument();
+    for (const input of screen.getAllByRole('spinbutton')) expect(input).toHaveValue(null);
+    expect(screen.getByText(/Patient form cleared/)).toBeInTheDocument();
+  });
+
+  it('regenerates recommendations and routes after committing a new origin', async () => {
+    mockAssessment.clinicianConfirmed = true;
+    const generate = vi.spyOn(apiClient, 'generateRecommendations').mockResolvedValue({ recommendation: null } as any);
+    const routes = vi.spyOn(apiClient, 'getCaseRoutes').mockResolvedValue({ routes: {} } as any);
+    const reset = vi.spyOn(apiClient, 'resetSimulationOriginToDefault').mockResolvedValue({ origin: { lat: 13.0108, lng: 74.7936 }, message: 'Reset' });
+    try {
+      await act(async () => { render(<AuthProvider><AmbulancePage /></AuthProvider>); });
+      await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'NITK Default' })); });
+      expect(generate).toHaveBeenCalledWith('case-test-001');
+      expect(routes).toHaveBeenCalledWith('case-test-001');
+    } finally {
+      mockAssessment.clinicianConfirmed = false;
+      generate.mockRestore(); routes.mockRestore(); reset.mockRestore();
+    }
+  });
+
+  it('invalidates the previous assessment when loading a new NITK patient scenario', async () => {
+    await act(async () => { render(<AuthProvider><AmbulancePage /></AuthProvider>); });
+    fireEvent.change(screen.getByLabelText('Preset Scenario'), { target: { value: '1' } });
+    expect(screen.queryByRole('button', { name: /Clinician Confirm Requirements/ })).not.toBeInTheDocument();
+    expect(screen.getByText(/Patient scenario loaded/)).toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: /11m vs 22m/ })).not.toBeInTheDocument();
+  });
+
 });

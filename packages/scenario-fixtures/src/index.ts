@@ -481,4 +481,5 @@ export const SEEDED_AMBULANCE = {
 
 export * from './importer.js';
 export * from './scenario-overlay.js';
+export * from './scenarios.js';
 

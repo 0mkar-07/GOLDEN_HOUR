@@ -4,6 +4,7 @@ import { AuthProvider } from './context/AuthContext';
 import { Header } from './components/Header';
 import { AmbulancePage } from './pages/AmbulancePage';
 import { HospitalPage } from './pages/HospitalPage';
+import { LegacyDemoPage } from './pages/LegacyDemoPage';
 import { AdminPage } from './pages/AdminPage';
 
 export const App: React.FC = () => {
@@ -17,6 +18,7 @@ export const App: React.FC = () => {
               <Route path="/" element={<AmbulancePage />} />
               <Route path="/ambulance" element={<Navigate to="/" replace />} />
               <Route path="/hospital" element={<HospitalPage />} />
+              <Route path="/admin/legacy-demo" element={<LegacyDemoPage />} />
               <Route path="/admin" element={<AdminPage />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>

@@ -111,12 +111,22 @@ export async function registerCaseRoutes(fastify: FastifyInstance) {
       // Execute Agent 1 (uses Gemini AI LLM agent when API key is provided)
       const agent1Proposal = await runAgent1Async(observations);
 
-      // Persist new assessment
+      // Persist new assessment with structured patient state fields
       const assessment = store.createAssessment(
         req.params.id,
         observations,
         agent1Proposal.proposedFullCareNeeds,
-        agent1Proposal.proposedStabilizationNeeds
+        agent1Proposal.proposedStabilizationNeeds,
+        {
+          proposedClinicalStability: agent1Proposal.proposedClinicalStability,
+          proposedConditionTrend: agent1Proposal.proposedConditionTrend,
+          proposedTransportAssessment: agent1Proposal.proposedTransportAssessment,
+          proposedPathway: agent1Proposal.proposedPathway,
+          requiredIntervention: agent1Proposal.requiredIntervention,
+          immediateRequirements: agent1Proposal.immediateRequirements,
+          definitiveRequirements: agent1Proposal.definitiveRequirements,
+          missingEvidence: agent1Proposal.missingEvidence,
+        }
       );
 
       store.recordAudit({
@@ -129,6 +139,8 @@ export async function registerCaseRoutes(fastify: FastifyInstance) {
           assessmentVersion: assessment.version,
           proposedFullCare: agent1Proposal.proposedFullCareNeeds,
           proposedStabilization: agent1Proposal.proposedStabilizationNeeds,
+          proposedPathway: agent1Proposal.proposedPathway,
+          proposedTransportAssessment: agent1Proposal.proposedTransportAssessment,
         },
       });
 
@@ -153,15 +165,33 @@ export async function registerCaseRoutes(fastify: FastifyInstance) {
         });
       }
 
-      const { assessmentVersion, confirmedFullCareNeeds, confirmedStabilizationNeeds } = parseResult.data;
+      const {
+        assessmentVersion,
+        confirmedFullCareNeeds,
+        confirmedStabilizationNeeds,
+        confirmedPathway,
+        confirmedTransportAssessment,
+        confirmedClinicalStability,
+        confirmedConditionTrend,
+        requiredIntervention,
+        overrideReason,
+      } = parseResult.data;
 
       try {
         const updatedAssessment = store.confirmRequirements(
           req.params.id,
           assessmentVersion,
-          confirmedFullCareNeeds,
-          confirmedStabilizationNeeds,
-          req.user!.id
+          confirmedFullCareNeeds ?? [],
+          confirmedStabilizationNeeds ?? [],
+          req.user!.id,
+          {
+            confirmedPathway,
+            confirmedTransportAssessment,
+            confirmedClinicalStability,
+            confirmedConditionTrend,
+            requiredIntervention,
+            overrideReason,
+          }
         );
 
         store.recordAudit({
@@ -172,8 +202,10 @@ export async function registerCaseRoutes(fastify: FastifyInstance) {
           entityId: updatedAssessment.id,
           details: {
             assessmentVersion,
-            confirmedFullCareNeeds,
-            confirmedStabilizationNeeds,
+            confirmedFullCareNeeds: updatedAssessment.confirmedFullCareNeeds,
+            confirmedStabilizationNeeds: updatedAssessment.confirmedStabilizationNeeds,
+            confirmedPathway: updatedAssessment.confirmedPathway,
+            confirmedTransportAssessment: updatedAssessment.confirmedTransportAssessment,
             clinician: req.user!.name,
           },
         });

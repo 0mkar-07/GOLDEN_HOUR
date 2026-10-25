@@ -88,26 +88,37 @@ export async function runAgentCoordinator(
   const currentPos = store.ambulancePosition;
   const previousRec = store.getRecommendation(caseId);
 
-  // Check for missing telemetry evidence
+  // Check for missing telemetry evidence (Table 41)
   let evaluationMode: EvaluationMode = options?.forceMode || 'RULES_FALLBACK';
   const missingTelemetry: string[] = [];
   const vitals = assessment.observations?.vitals;
-  if (!vitals || vitals.gcs === undefined) missingTelemetry.push('gcs');
-  if (!vitals || vitals.systolicBp === undefined) missingTelemetry.push('systolicBp');
-  if (missingTelemetry.length > 0) {
+  if (!vitals || vitals.gcs === undefined || vitals.gcs === null) missingTelemetry.push('gcs');
+  if (!vitals || vitals.systolicBp === undefined || vitals.systolicBp === null) missingTelemetry.push('systolicBp');
+  if (!vitals || vitals.oxygenSaturation === undefined || vitals.oxygenSaturation === null) missingTelemetry.push('oxygenSaturation');
+  if (missingTelemetry.length > 0 && !options?.forceMode) {
     evaluationMode = 'WAITING_FOR_DATA';
   }
 
-  // 1. Tool: List Candidate Hospitals from Directory
-  const candidates = store.listHospitals();
+  // 1. Tool: List Candidate Hospitals from Directory (incorporate custom scenario overlay seed if provided)
+  const rawCandidates = store.listHospitals();
+  const candidates = options?.customSeed
+    ? rawCandidates.map((h) => ({
+        ...h,
+        operationalProfile: (h as any).operationalProfile,
+      }))
+    : rawCandidates;
 
-  // 2. Tool: Agent 2 Suitability Filtering
+  // 2. Tool: Agent 2 Suitability Filtering (Stage 5)
   const evaluations: HospitalEvaluation[] = runAgent2(
     assessment.confirmedFullCareNeeds,
     assessment.confirmedStabilizationNeeds,
     candidates,
     (id) => store.listResourcePoolsByHospital(id),
-    (id) => store.listStaffByHospital(id)
+    (id) => store.listStaffByHospital(id),
+    {
+      requiredIntervention: assessment.requiredIntervention,
+      evaluationTime: new Date().toISOString(),
+    }
   );
 
   // 3. Tool: Centralized Route Evaluation to Candidate Road Access Points (Stage 2)
@@ -120,7 +131,7 @@ export async function runAgentCoordinator(
     sourceGeneration: currentPos.sourceGeneration,
   });
 
-  // 4. Tool: Agent 3 Pure Time Calculation & Dynamic Ranking (Stage 4)
+  // 4. Tool: Agent 3 Pure Time Calculation & Dynamic Ranking (Stage 6)
   const ranking: Agent3RankingResult = runAgent3(
     caseId,
     assessment.version,
@@ -128,7 +139,14 @@ export async function runAgentCoordinator(
     evaluations,
     routingProvider,
     store.trafficOverrides,
-    routeSnapshot
+    routeSnapshot,
+    {
+      selectedPathway: assessment.confirmedPathway || 'DIRECT_DEFINITIVE',
+      requiredIntervention: assessment.requiredIntervention,
+      confirmedCareObjective:
+        assessment.confirmedPathway === 'STABILIZE_THEN_TRANSFER' ? 'STABILIZATION' : 'FULL_CARE',
+      scenarioId: (options as any)?.scenarioId,
+    }
   );
 
   // 5. Compute "Why This Changed" Explanation from Snapshots (Stage 7)
@@ -176,16 +194,21 @@ export async function runAgentCoordinator(
     positionSequence: currentPos.serverSequence,
     inventoryVersion: 1,
     recommendationMode: ranking.recommendationMode,
+    selectedPathway: ranking.selectedPathway,
+    confirmedObjective:
+      assessment.confirmedPathway === 'STABILIZE_THEN_TRANSFER' ? 'STABILIZATION' : 'FULL_CARE',
     routeSnapshotId: routeSnapshot.snapshotId,
     evaluationMode,
     diagnosticId,
-    whyChanged: whyChangedSummary,
+    whyChanged: ranking.whyChanged || whyChangedSummary,
     priorityCandidates: ranking.priorityCandidates,
     hospitalA: ranking.hospitalA,
     hospitalB: ranking.hospitalB,
     hospitalC: ranking.hospitalC,
     allCandidates: ranking.allEvaluations,
     coordinatorBriefing,
+    policyReasonCodes: ranking.policyReasonCodes,
+    onwardTransfer: ranking.onwardTransfer,
     generatedAt: new Date().toISOString(),
   };
 
